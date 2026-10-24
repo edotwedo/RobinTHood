@@ -6,7 +6,7 @@ namespace RobinCode;
 
 public sealed class RobinForm : Form
 {
-    const int TitleBarHeight = 32;
+    const int TitleBarHeight = 40;
 
     readonly Button skinBtn = new();
     readonly Button proBtn = new();
@@ -96,19 +96,19 @@ public sealed class RobinForm : Form
     void SetupControls()
     {
         // Window Controls
-        skinBtn.Text = "🎨 SKIN";
+        skinBtn.Text = "THEME";
         skinBtn.FlatStyle = FlatStyle.Flat;
         skinBtn.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         skinBtn.Click += (_, _) => CycleSkin();
 
-        proBtn.Text = "★ UNLOCK PRO ($4.99)";
+        proBtn.Text = "★ PRO $4.99";
         proBtn.FlatStyle = FlatStyle.Flat;
         proBtn.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         proBtn.Click += (_, _) => Process.Start(new ProcessStartInfo("https://buy.stripe.com/cNi9AV0CK91h36D9dn9AA05") { UseShellExecute = true });
 
-        minBtn.Text = "—";
+        minBtn.Text = "–";
         minBtn.FlatStyle = FlatStyle.Flat;
-        minBtn.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        minBtn.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
         minBtn.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
         closeBtn.Text = "✕";
@@ -123,11 +123,14 @@ public sealed class RobinForm : Form
 
         bannerLabel.Text = "ROUTING: KILO AUTO • OVH 120B • GROQ 70B • CLOUDFLARE • GEMINI FLASH • LOCAL OLLAMA";
         bannerLabel.Font = Skin.SubtitleFont;
-        bannerLabel.AutoSize = true;
+        bannerLabel.AutoSize = false;
+        bannerLabel.AutoEllipsis = true;
 
         UpdateSponsorBadge();
-        sponsorBadge.Font = new Font("Segoe UI", 8.5f, FontStyle.Italic);
+        sponsorBadge.Font = new Font("Segoe UI", 9f, FontStyle.Italic);
         sponsorBadge.Cursor = Cursors.Hand;
+        sponsorBadge.AutoSize = false;
+        sponsorBadge.AutoEllipsis = true;
         sponsorBadge.Click += (_, _) =>
         {
             var ad = SponsorAds[currentAdIndex % SponsorAds.Length];
@@ -268,47 +271,50 @@ public sealed class RobinForm : Form
         int w = ClientSize.Width;
         int h = ClientSize.Height;
 
-        // Top Row: Title + Right Controls
-        titleLabel.Location = new Point(14, 8);
-        titleLabel.MaximumSize = new Size(w - 320, 24);
+        // Top Row: Title + Window Action Controls (TitleBarHeight = 40)
+        titleLabel.Location = new Point(16, 9);
+        titleLabel.MaximumSize = new Size(w - 300, 26);
 
-        closeBtn.SetBounds(w - 34, 4, 28, 24);
-        minBtn.SetBounds(w - 66, 4, 28, 24);
-        skinBtn.SetBounds(w - 144, 4, 72, 24);
-        proBtn.SetBounds(w - 296, 4, 146, 24);
+        closeBtn.SetBounds(w - 38, 7, 26, 26);
+        minBtn.SetBounds(w - 68, 7, 26, 26);
+        skinBtn.SetBounds(w - 148, 7, 74, 26);
+        proBtn.SetBounds(w - 280, 7, 126, 26);
 
-        // Header Strip
-        bannerLabel.Location = new Point(14, 36);
-        sponsorBadge.Location = new Point(14, 56);
-        statsLabel.Location = new Point(w - statsLabel.PreferredWidth - 14, 42);
+        // Header Strip Row 1: Subtitle Routing & Stats (Y: 48)
+        int statsW = statsLabel.PreferredWidth;
+        statsLabel.SetBounds(w - statsW - 16, 48, statsW, 20);
+        bannerLabel.SetBounds(16, 48, Math.Max(100, w - statsW - 36), 20);
 
-        // Preset Strip (Row 1)
-        modelCombo.SetBounds(14, 82, 240, 28);
-        int presetX = 262;
-        int btnW = Math.Max(80, (w - presetX - 14 - 18) / 4);
-        fastCodeBtn.SetBounds(presetX, 82, btnW, 28);
-        fixBugBtn.SetBounds(presetX + (btnW + 6), 82, btnW, 28);
-        refactorBtn.SetBounds(presetX + (btnW + 6) * 2, 82, btnW, 28);
-        writeTestsBtn.SetBounds(presetX + (btnW + 6) * 3, 82, btnW, 28);
+        // Header Strip Row 2: Dedicated Full-Width Rotating Sponsor Banner (Y: 72)
+        sponsorBadge.SetBounds(16, 72, w - 32, 20);
 
-        // Split Input & Output Editors
-        int editorTop = 118;
+        // Preset Strip Row 3 (Y: 98)
+        modelCombo.SetBounds(16, 98, 240, 28);
+        int presetX = 264;
+        int btnW = Math.Max(80, (w - presetX - 16 - 18) / 4);
+        fastCodeBtn.SetBounds(presetX, 98, btnW, 28);
+        fixBugBtn.SetBounds(presetX + (btnW + 6), 98, btnW, 28);
+        refactorBtn.SetBounds(presetX + (btnW + 6) * 2, 98, btnW, 28);
+        writeTestsBtn.SetBounds(presetX + (btnW + 6) * 3, 98, btnW, 28);
+
+        // Split Input & Output Editors (Row 4, Y: 134)
+        int editorTop = 134;
         int bottomBarH = 46;
         int availableH = h - editorTop - bottomBarH;
         int inputH = (int)(availableH * 0.38);
-        int outputH = availableH - inputH - 42;
+        int outputH = availableH - inputH - 44;
 
-        inputEditor.SetBounds(14, editorTop, w - 28, inputH);
-        generateBtn.SetBounds(14, editorTop + inputH + 6, w - 28, 32);
-        outputEditor.SetBounds(14, editorTop + inputH + 44, w - 28, outputH);
+        inputEditor.SetBounds(16, editorTop, w - 32, inputH);
+        generateBtn.SetBounds(16, editorTop + inputH + 6, w - 32, 34);
+        outputEditor.SetBounds(16, editorTop + inputH + 46, w - 32, outputH);
 
         // Bottom Action Bar
         int botY = h - 38;
-        copyBtn.SetBounds(14, botY, 110, 28);
-        saveBtn.SetBounds(130, botY, 110, 28);
-        clearBtn.SetBounds(246, botY, 80, 28);
-        statusLabel.Location = new Point(336, botY + 6);
-        statusLabel.MaximumSize = new Size(w - 345, 24);
+        copyBtn.SetBounds(16, botY, 110, 28);
+        saveBtn.SetBounds(134, botY, 110, 28);
+        clearBtn.SetBounds(252, botY, 80, 28);
+        statusLabel.Location = new Point(342, botY + 6);
+        statusLabel.MaximumSize = new Size(w - 355, 24);
     }
 
     void ApplySkin()
