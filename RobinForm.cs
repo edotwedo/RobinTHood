@@ -49,13 +49,15 @@ public sealed class RobinForm : Form
     readonly Button clearBtn = new();
     readonly Label statusLabel = new();
 
-    double totalSecondsSaved = 0;
+    double totalAnswerSeconds = 0;
     int requestsCompleted = 0;
 
     [DllImport("user32.dll")]
     static extern bool ReleaseCapture();
     [DllImport("user32.dll")]
     static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr handle);
 
     public RobinForm()
     {
@@ -72,11 +74,13 @@ public sealed class RobinForm : Form
         try
         {
             string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.jpg");
-            if (!File.Exists(logoPath)) logoPath = @"C:\Users\mrmar\robincode\logo.jpg";
+            if (!File.Exists(logoPath)) logoPath = Path.Combine(AppContext.BaseDirectory, "assets", "logo.jpg");
             if (File.Exists(logoPath))
             {
                 using var bmp = new Bitmap(logoPath);
-                Icon = Icon.FromHandle(bmp.GetHicon());
+                IntPtr hIcon = bmp.GetHicon();
+                try { Icon = (Icon)Icon.FromHandle(hIcon).Clone(); }
+                finally { DestroyIcon(hIcon); }
             }
         }
         catch { }
@@ -412,10 +416,10 @@ public sealed class RobinForm : Form
         if (res.Success)
         {
             requestsCompleted++;
-            totalSecondsSaved += res.ElapsedSeconds;
+            totalAnswerSeconds += res.ElapsedSeconds;
 
-            double estSavedDollars = requestsCompleted * 0.035;
-            statsLabel.Text = $"TOKENS BILLED: $0.00 FOREVER  |  SAVED: ~${estSavedDollars:0.00}  |  ENGINE: {res.ModelUsed}";
+            double avgSeconds = requestsCompleted > 0 ? totalAnswerSeconds / requestsCompleted : 0;
+            statsLabel.Text = $"TOKENS BILLED: $0.00  |  {requestsCompleted} answers · {totalAnswerSeconds:0}s total · {avgSeconds:0.0}s avg  |  ENGINE: {res.ModelUsed}";
             statusLabel.Text = $"✔ Complete in {res.ElapsedSeconds:0.1}s via {res.ModelUsed} (Cost: $0.00)";
             currentAdIndex = (currentAdIndex + 1) % SponsorAds.Length;
             UpdateSponsorBadge();

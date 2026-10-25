@@ -90,7 +90,15 @@ public static class KeylessClient
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancel);
-                throw new HttpRequestException($"HTTP {(int)response.StatusCode} from {endpoint.Id}: {Trim(body)}");
+                int code = (int)response.StatusCode;
+                string hint = code switch
+                {
+                    429 => "rate limited by the provider",
+                    401 or 403 => "provider refused the request (no key or blocked)",
+                    >= 500 => "provider error",
+                    _ => "request rejected",
+                };
+                throw new HttpRequestException($"HTTP {code} from {endpoint.Id} - {hint}: {Trim(body)}");
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancel);

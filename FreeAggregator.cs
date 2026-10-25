@@ -56,6 +56,7 @@ public static class FreeAggregator
         string prompt, string modelId = "auto", Action<string>? onChunk = null, CancellationToken cancel = default)
     {
         var sw = Stopwatch.StartNew();
+        var failures = new List<string>();
 
         // 0. Local Ollama Execution (Air-Gapped & Offline)
         if (modelId.StartsWith("ollama:"))
@@ -84,10 +85,11 @@ public static class FreeAggregator
                     {
                         return directRes with { ModelUsed = $"Auto ({target})" };
                     }
+                    failures.Add($"{target}: {directRes.ErrorMessage}");
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Fast failover to next engine in cascade
+                    failures.Add($"{target}: {ex.GetType().Name} {ex.Message}");
                 }
             }
         }
@@ -97,16 +99,16 @@ public static class FreeAggregator
             {
                 var directRes = await KeylessClient.CompleteAsync(prompt, modelId, onChunk, cancel);
                 if (directRes.Success) return directRes;
+                failures.Add($"{modelId}: {directRes.ErrorMessage}");
             }
-            catch { }
+            catch (Exception ex) { failures.Add($"{modelId}: {ex.Message}"); }
         }
 
         // 2. Mega Zword CLI Fallover Router (Groq, Cloudflare, Gemini, Nvidia)
-        string megazwordExe = @"C:\Users\mrmar\mega-zword\.venv\Scripts\megazword.exe";
+        string megazwordExe = Path.Combine(AppContext.BaseDirectory, "megazword.exe");
         if (!File.Exists(megazwordExe))
         {
-            string altPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "mega-zword", ".venv", "Scripts", "megazword.exe");
-            if (File.Exists(altPath)) megazwordExe = altPath;
+            megazwordExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "mega-zword", ".venv", "Scripts", "megazword.exe");
         }
 
         if (File.Exists(megazwordExe))
@@ -169,12 +171,16 @@ public static class FreeAggregator
                         sw.Stop();
                         return new CompletionResult(true, detectedModel, resultText, sw.Elapsed.TotalSeconds);
                     }
+                    failures.Add($"megazword: exit {proc.ExitCode}: {rawErr.Trim()}");
                 }
             }
-            catch { }
+            catch (Exception ex) { failures.Add($"megazword: {ex.Message}"); }
         }
 
         sw.Stop();
-        return new CompletionResult(false, "offline", "", sw.Elapsed.TotalSeconds, "All free tiers momentarily busy. Please try again in 5s.");
+        string detail = failures.Count == 0
+            ? "All free tiers momentarily busy. Please try again in 5s."
+            : $"All free tiers busy ({failures.Count} tried): {string.Join(" | ", failures.Take(4))}";
+        return new CompletionResult(false, "offline", "", sw.Elapsed.TotalSeconds, detail);
     }
 }
