@@ -59,9 +59,38 @@ public static class FreeAggregator
     public static Task<CompletionResult> RunPromptAsync(string prompt, string modelId = "auto") =>
         RunPromptStreamAsync(prompt, modelId, null);
 
-    public static async Task<CompletionResult> RunPromptStreamAsync(
+    public static Task<CompletionResult> RunPromptStreamAsync(
         string prompt, string modelId = "auto", Action<string>? onChunk = null, CancellationToken cancel = default,
         Action<string>? onStatus = null)
+    {
+        if (modelId != "auto") return RunPromptCoreAsync(prompt, modelId, onChunk, cancel, onStatus);
+        return WithDeadlineAsync(token => RunPromptCoreAsync(prompt, modelId, onChunk, token, onStatus),
+            cancel, TimeSpan.FromMinutes(2));
+    }
+
+    internal static async Task<CompletionResult> WithDeadlineAsync(
+        Func<CancellationToken, Task<CompletionResult>> run, CancellationToken cancel, TimeSpan budget)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        deadline.CancelAfter(budget);
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            cancel.ThrowIfCancellationRequested();
+            var result = await run(deadline.Token);
+            deadline.Token.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return new(false, "auto", "", watch.Elapsed.TotalSeconds,
+                "Free assistance took too long. Your request is still saved; please try again or choose an installed local model.");
+        }
+    }
+
+    static async Task<CompletionResult> RunPromptCoreAsync(
+        string prompt, string modelId, Action<string>? onChunk, CancellationToken cancel,
+        Action<string>? onStatus)
     {
         var sw = Stopwatch.StartNew();
         var failures = new List<string>();

@@ -36,6 +36,31 @@ static class Checks
                 Console.WriteLine("EVIDENCE " + output);
                 return 0;
             }
+            int timedAttempts = 0;
+            bool released = false;
+            var timed = await FreeAggregator.WithDeadlineAsync(async token =>
+            {
+                try
+                {
+                    timedAttempts++;
+                    await Task.Delay(Timeout.Infinite, token);
+                    timedAttempts++;
+                    return Good();
+                }
+                finally { released = true; }
+            }, default, TimeSpan.FromMilliseconds(75));
+            Assert(!timed.Success && timed.OutputText == "" && timed.ErrorMessage.Contains("still saved") && timedAttempts == 1 && released,
+                "overall deadline cancels active work, prevents later attempts and keeps an actionable saved-request message");
+            using (var userCancel = new CancellationTokenSource())
+            {
+                userCancel.Cancel();
+                bool cancelled = false;
+                try { await FreeAggregator.WithDeadlineAsync(token => Task.FromResult(Good()), userCancel.Token, TimeSpan.FromSeconds(1)); }
+                catch (OperationCanceledException) { cancelled = true; }
+                Assert(cancelled, "user cancellation stays cancellation instead of becoming a service timeout");
+            }
+            var timely = await FreeAggregator.WithDeadlineAsync(token => Task.FromResult(Good("chosen", "saved answer")), default, TimeSpan.FromSeconds(1));
+            Assert(timely.Success && timely.OutputText == "saved answer" && timely.ModelUsed == "chosen", "answer completed inside total budget is preserved");
             DateTimeOffset now = DateTimeOffset.Parse("2026-10-26T06:00:00Z");
             var routes = new[] { E("a", "one.test"), E("a2", "one.test"), E("b", "two.test") };
             var sent = new List<string>();
