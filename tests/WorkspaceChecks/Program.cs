@@ -102,9 +102,41 @@ static class Checks
             Directory.CreateDirectory(desktop);
             File.WriteAllText(Path.Combine(download, "RobinTHood.exe"), "fake test executable; never launched");
             File.WriteAllText(Path.Combine(download, "RobinTHood.dll"), "fake test assembly");
+            File.WriteAllText(Path.Combine(download, "RobinTHood.runtimeconfig.json"), "{}");
+            File.WriteAllText(Path.Combine(download, "RobinTHood.deps.json"), """
+                {"runtimeTarget":{"name":"test"},"targets":{"test":{"Robin/1":{"runtime":{"RobinTHood.dll":{}},"native":{"required-native.dll":{}},"resources":{"fr/Robin.resources.dll":{}}}}}}
+                """);
+            File.WriteAllText(Path.Combine(download, "required-native.dll"), "required native dependency");
+            Directory.CreateDirectory(Path.Combine(download, "fr"));
+            File.WriteAllText(Path.Combine(download, "fr", "Robin.resources.dll"), "required translated resource");
+            foreach (string name in new[] { "unrelated.txt", "unrelated.exe", "unrelated.dll", "unrelated.json" })
+                File.WriteAllText(Path.Combine(download, name), "synthetic unrelated download");
+            Directory.CreateDirectory(Path.Combine(download, "unrelated-folder"));
+            File.WriteAllText(Path.Combine(download, "unrelated-folder", "notes.txt"), "synthetic unrelated folder");
             string shortcut = DesktopSetup.CreateShortcut(download, Path.Combine(download, "RobinTHood.exe"), desktop, installed);
+            Check(!Directory.EnumerateFiles(installed, "unrelated.*", SearchOption.AllDirectories).Any()
+                && !Directory.EnumerateDirectories(installed, "unrelated-folder", SearchOption.AllDirectories).Any(),
+                "folder installation excludes unrelated Downloads files, executables, DLLs and folders");
+            Check(Directory.EnumerateFiles(installed, "required-native.dll", SearchOption.AllDirectories).Count() == 1
+                && Directory.EnumerateFiles(installed, "Robin.resources.dll", SearchOption.AllDirectories).Single().Contains(Path.DirectorySeparatorChar + "fr" + Path.DirectorySeparatorChar),
+                "folder installation retains declared native dependencies and translated resources");
+            File.WriteAllText(Path.Combine(download, "RobinTHood.deps.json"), """
+                {"runtimeTarget":{"name":"test"},"targets":{"test":{"Robin/1":{"runtime":{"../outside.txt":{}}}}}}
+                """);
+            Throws<IOException>(() => DesktopSetup.CreateShortcut(download, Path.Combine(download, "RobinTHood.exe"), desktop, installed), "dependency manifest cannot copy a path outside the app folder");
             Directory.Delete(download, true);
             Check(File.Exists(shortcut) && Directory.EnumerateFiles(installed, "RobinTHood.exe", SearchOption.AllDirectories).Count() == 1, "desktop shortcut created with a stable app copy that survives removing Downloads");
+            string single = Path.Combine(root, "SingleFileDownloads");
+            Directory.CreateDirectory(single);
+            File.WriteAllText(Path.Combine(single, "RobinTHood.exe"), "fake standalone executable; never launched");
+            File.WriteAllText(Path.Combine(single, "unrelated.dll"), "not part of Robin");
+            Directory.CreateDirectory(Path.Combine(single, "unrelated-folder"));
+            File.WriteAllText(Path.Combine(single, "unrelated-folder", "notes.txt"), "not part of Robin");
+            string singleInstall = Path.Combine(single, "installed");
+            DesktopSetup.CreateShortcut(single, Path.Combine(single, "RobinTHood.exe"), desktop, singleInstall);
+            Check(Directory.EnumerateFiles(singleInstall, "*", SearchOption.AllDirectories).Count() == 1
+                && Directory.EnumerateFiles(singleInstall, "RobinTHood.exe", SearchOption.AllDirectories).Count() == 1,
+                "single-file installation copies only the executable even with installation below the source folder");
             store.SaveSettings(new WorkspaceSettings { SetupComplete = true, OnlineAllowed = false });
             int generations = 0;
             bool fail = false;
