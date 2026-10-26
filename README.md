@@ -22,7 +22,7 @@ Writing assistance requires internet access and is off until you enable it. When
 
 ## Updates
 
-On opening, Robin checks GitHub for a newer release without sending project text. Nothing installs until you choose the update button and confirm. Robin verifies the downloaded executable's size and SHA-256 before installation. Follow the restart prompt to finish updating.
+On opening, Robin checks GitHub for a newer release without sending project text. A newer release is downloaded, checked against its size and SHA-256, and used to replace this program file. Projects and any other files stay where they are. Robin then restarts into the new copy.
 
 ## Scope
 

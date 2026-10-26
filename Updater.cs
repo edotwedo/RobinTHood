@@ -83,7 +83,7 @@ public static class Updater
     /// <summary>Downloads and verifies the update, installs it into its own content-addressed
     /// folder and points an existing desktop shortcut at it. Returns the new executable path.</summary>
     public static async Task<string> InstallAsync(UpdateInfo update, IProgress<int>? progress, CancellationToken cancel,
-        HttpClient? http = null, string? installationRoot = null, string? desktopDirectory = null)
+        HttpClient? http = null, string? installationRoot = null, string? desktopDirectory = null, string? replaceExecutable = null)
     {
         string root = installationRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "RobinTHood");
         Directory.CreateDirectory(root);
@@ -124,6 +124,8 @@ public static class Updater
             string desktop = desktopDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             if (File.Exists(Path.Combine(desktop, "RobinTHood.lnk")))
                 DesktopSetup.CreateShortcut(sourceDirectory: folder, executablePath: exe, desktopDirectory: desktop, installationRoot: root);
+            // The running file can be locked. A failure here is finished by the new process after this one exits.
+            if (replaceExecutable is not null) TryReplaceExecutable(exe, replaceExecutable);
             return exe;
         }
         finally
@@ -138,18 +140,43 @@ public static class Updater
         var start = new ProcessStartInfo(executable) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(executable)! };
         start.ArgumentList.Add("--after-update");
         start.ArgumentList.Add(Environment.ProcessId.ToString());
+        if (Environment.ProcessPath is { } self && !SameFile(self, executable))
+        {
+            start.ArgumentList.Add("--replace");
+            start.ArgumentList.Add(self);
+        }
         Process.Start(start);
     }
 
     /// <summary>Called at startup: if launched by an update, wait (bounded) for the old copy to close
-    /// so the project lock is free.</summary>
+    /// so the project lock is free, then replace that copy with this one.</summary>
     public static void WaitForPreviousCopy(string[] args)
     {
         int index = Array.IndexOf(args, "--after-update");
-        if (index < 0 || index + 1 >= args.Length || !int.TryParse(args[index + 1], out int pid)) return;
-        try { using var old = Process.GetProcessById(pid); old.WaitForExit(15000); }
-        catch (ArgumentException) { } // Already gone.
+        if (index >= 0 && index + 1 < args.Length && int.TryParse(args[index + 1], out int pid))
+        {
+            try { using var old = Process.GetProcessById(pid); old.WaitForExit(15000); }
+            catch (ArgumentException) { } // Already gone.
+        }
+        int replace = Array.IndexOf(args, "--replace");
+        if (replace < 0 || replace + 1 >= args.Length || Environment.ProcessPath is not { } self) return;
+        TryReplaceExecutable(self, args[replace + 1]);
     }
+
+    /// <summary>Copies the new executable over the old one. Never deletes a folder or touches the workspace.</summary>
+    public static void TryReplaceExecutable(string source, string target, string? workspaceRoot = null)
+    {
+        if (SameFile(source, target)) return;
+        if (!string.Equals(Path.GetFileName(target), AssetName, StringComparison.OrdinalIgnoreCase)) return;
+        string fullTarget = Path.GetFullPath(target);
+        string workspace = Path.GetFullPath(workspaceRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RobinTHood", "Workspace"));
+        if (fullTarget.StartsWith(workspace.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return;
+        try { File.Copy(source, fullTarget, overwrite: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    static bool SameFile(string a, string b) =>
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
     static HttpClient CreateClient()
     {

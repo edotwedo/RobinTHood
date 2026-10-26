@@ -63,6 +63,22 @@ static class Checks
             Assert(!File.Exists(Path.Combine(desktop, "RobinTHood.lnk")), "update never creates a desktop shortcut the user declined");
             Assert(!Directory.EnumerateFiles(Path.Combine(root, "programs")).Any(), "no partial download is left behind");
 
+            string running = Path.Combine(root, "running");
+            Directory.CreateDirectory(running);
+            string oldExe = Path.Combine(running, "RobinTHood.exe");
+            File.WriteAllBytes(oldExe, "old copy"u8.ToArray());
+            File.WriteAllText(Path.Combine(running, "notes.txt"), "keep me");
+            string replaced = await Updater.InstallAsync(update!, null, default, Serve("", exe), Path.Combine(root, "programs"), desktop, oldExe);
+            Assert(File.ReadAllBytes(oldExe).AsSpan().SequenceEqual(exe) && File.ReadAllBytes(replaced).AsSpan().SequenceEqual(exe),
+                "verified update replaces the old program file");
+            Assert(File.ReadAllText(Path.Combine(running, "notes.txt")) == "keep me", "files beside the program stay in place");
+            string workspaceExe = Path.Combine(root, "Workspace", "RobinTHood.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(workspaceExe)!);
+            byte[] project = "project"u8.ToArray();
+            File.WriteAllBytes(workspaceExe, project);
+            Updater.TryReplaceExecutable(replaced, workspaceExe, Path.Combine(root, "Workspace"));
+            Assert(File.ReadAllBytes(workspaceExe).SequenceEqual(project), "a project file is never overwritten by an update");
+
             var tampered = Encoding.UTF8.GetBytes("pretend RobinTHood v0.4.0 executablX");
             bool rejected = false;
             try { await Updater.InstallAsync(update!, null, default, Serve("", tampered), Path.Combine(root, "tampered"), desktop); }

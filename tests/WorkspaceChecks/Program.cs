@@ -276,7 +276,7 @@ static class Checks
             }
             var offered = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", new Uri("https://example.invalid/RobinTHood.exe"), 1, new string('0', 64));
             using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
-                       updateInstall: (_, _, _) => throw new IOException("offline test")))
+                       updateInstall: (_, _, _) => throw new IOException("offline test"), applyUpdate: false))
             {
                 form.StartPosition = FormStartPosition.Manual;
                 form.Location = new Point(-20000, -20000);
@@ -302,9 +302,18 @@ static class Checks
             var realRelaunch = relaunchField.GetValue(null);
             relaunchField.SetValue(null, new Action<string>(relaunched.Add));
             void Pump(Func<bool> until) { for (int i = 0; i < 300 && !until(); i++) { Application.DoEvents(); Thread.Sleep(5); } }
+            int autoInstalls = 0;
+            var auto = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
+                updateInstall: (_, _, _) => { autoInstalls++; return Task.FromResult(@"C:\updates\auto.exe"); })
+                { StartPosition = FormStartPosition.Manual, Location = new Point(-20000, -20000), ShowInTaskbar = false };
+            auto.Show();
+            Pump(() => auto.IsDisposed);
+            Check(autoInstalls == 1 && auto.IsDisposed && relaunched.SequenceEqual([@"C:\updates\auto.exe"]),
+                "a newer release downloads and restarts without asking");
+            relaunched.Clear();
             WorkspaceForm UpdateForm(Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> install)
             {
-                var f = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered), updateInstall: install)
+                var f = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered), updateInstall: install, applyUpdate: false)
                     { StartPosition = FormStartPosition.Manual, Location = new Point(-20000, -20000), ShowInTaskbar = false };
                 f.Show();
                 Pump(() => Field<Button>(f, "updateButton").Visible);

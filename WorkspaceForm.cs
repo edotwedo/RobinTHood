@@ -8,6 +8,7 @@ public sealed class WorkspaceForm : Form
     readonly Func<string, string, CancellationToken, Task<CompletionResult>> generate;
     readonly bool skipSetup;
     readonly Func<CancellationToken, Task<UpdateInfo?>>? updateCheck;
+    readonly bool applyUpdate;
     readonly Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> updateInstall;
     readonly Button updateButton = ActionButton("Update available");
     readonly Label updateLine = new() { Dock = DockStyle.Bottom, Height = 36, Font = new Font("Segoe UI", 9), Text = "Checking GitHub for an update…" };
@@ -49,10 +50,12 @@ public sealed class WorkspaceForm : Form
     public WorkspaceForm(WorkspaceStore? workspace = null, bool skipSetup = false,
         Func<string, string, CancellationToken, Task<CompletionResult>>? generator = null,
         Func<CancellationToken, Task<UpdateInfo?>>? updateCheck = null,
-        Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>>? updateInstall = null)
+        Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>>? updateInstall = null,
+        bool applyUpdate = true)
     {
         this.updateCheck = updateCheck;
-        this.updateInstall = updateInstall ?? ((update, progress, token) => Updater.InstallAsync(update, progress, token));
+        this.applyUpdate = applyUpdate;
+        this.updateInstall = updateInstall ?? ((update, progress, token) => Updater.InstallAsync(update, progress, token, replaceExecutable: Environment.ProcessPath));
         store = workspace ?? new WorkspaceStore();
         settings = store.LoadSettings();
         this.skipSetup = skipSetup;
@@ -246,7 +249,8 @@ public sealed class WorkspaceForm : Form
         availableUpdate = update;
         updateButton.Text = $"Update to v{update.Version}";
         updateButton.Visible = true;
-        updateLine.Text = "A newer release is on GitHub.";
+        updateLine.Text = "Downloading v" + update.Version + "…";
+        if (applyUpdate) await RunUpdateAsync(update);
     }
 
     async Task InstallUpdateAsync()
@@ -254,9 +258,6 @@ public sealed class WorkspaceForm : Form
         // Already installed: the button now finishes the update by restarting.
         if (relaunchAfterClose is not null) { Close(); return; }
         if (availableUpdate is not { } update || busy || updateDownload is not null) return;
-        string size = update.Size > 0 ? $" ({update.Size / 1048576.0:0.#} MB)" : "";
-        if (MessageBox.Show(this, $"Download RobinTHood v{update.Version}{size} from GitHub and restart? Your work is saved first.",
-                "Update RobinTHood", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
         await RunUpdateAsync(update);
     }
 
@@ -325,7 +326,7 @@ public sealed class WorkspaceForm : Form
         var shortcut = new CheckBox { Text = "Put Robin on my desktop (keeps an app copy outside Downloads)", Checked = true, AutoSize = true, MaximumSize = new Size(560, 0) };
         layout.Controls.Add(online);
         layout.Controls.Add(shortcut);
-        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent, and nothing installs unless you choose Update.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
+        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent. A newer copy replaces this program file. Your projects and other files stay where they are.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
         var done = ActionButton("Open my workspace");
         done.Click += (_, _) =>
         {
