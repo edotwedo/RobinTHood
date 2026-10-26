@@ -274,6 +274,19 @@ static class Checks
                     "a current copy says it is up to date instead of hiding the update check");
                 current.Hide();
             }
+            using (var offline = new WorkspaceForm(store, skipSetup: true, generator: fake,
+                       updateCheck: _ => Task.FromException<UpdateInfo?>(new UpdateCheckException("Couldn't reach GitHub."))))
+            {
+                offline.StartPosition = FormStartPosition.Manual;
+                offline.Location = new Point(-20000, -20000);
+                offline.ShowInTaskbar = false;
+                offline.Show();
+                for (int i = 0; i < 20 && !Field<Label>(offline, "updateLine").Text.Contains("couldn't"); i++) { Application.DoEvents(); Thread.Sleep(10); }
+                var line = Field<Label>(offline, "updateLine");
+                Check(line.Text.Contains("couldn't check") && !line.Text.Contains("up to date") && !Field<Button>(offline, "updateButton").Visible,
+                    "an offline or rate-limited check never claims the copy is up to date");
+                offline.Hide();
+            }
             var offered = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", new Uri("https://example.invalid/RobinTHood.exe"), 1, new string('0', 64));
             using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
                        updateInstall: (_, _, _) => throw new IOException("offline test")))

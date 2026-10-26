@@ -48,9 +48,15 @@ static class Checks
         Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", null, $"SHA-256: `{sha}`"))) is { } noted && noted.Sha256 == sha,
             "fingerprint published in release notes is accepted when the API digest is missing");
         Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", "sha256:" + sha, asset: "Other.zip"))) is null, "release without the Windows exe is not offered");
-        Assert(await Updater.CheckAsync(default, current, new HttpClient(new FakeGitHub(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)))) is null,
-            "rate-limited or failed check quietly offers nothing");
-        Assert(await Updater.CheckAsync(default, current, Serve("not json")) is null, "malformed release data quietly offers nothing");
+        async Task<bool> Fails(HttpClient http)
+        {
+            try { await Updater.CheckAsync(default, current, http); return false; }
+            catch (UpdateCheckException) { return true; }
+        }
+        Assert(await Fails(new HttpClient(new FakeGitHub(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)))),
+            "rate-limited check reports that it couldn't check, not 'nothing newer'");
+        Assert(await Fails(Serve("not json")), "malformed release data reports that it couldn't check");
+        Assert(await Fails(new HttpClient(new FakeGitHub(_ => throw new HttpRequestException("offline")))), "offline check reports that it couldn't check");
 
         string root = Path.Combine(Path.GetTempPath(), "robin-update-check-" + Guid.NewGuid().ToString("N"));
         string desktop = Path.Combine(root, "desktop");

@@ -236,7 +236,14 @@ public sealed class WorkspaceForm : Form
             return;
         }
         updateLine.Text = "Checking GitHub for an update…";
-        var update = await updateCheck(CancellationToken.None);
+        UpdateInfo? update;
+        try { update = await updateCheck(CancellationToken.None); }
+        catch (Exception)
+        {
+            // Offline or rate limited: say so instead of claiming the copy is current.
+            if (!IsDisposed) updateLine.Text = here + " · couldn't check for updates";
+            return;
+        }
         if (IsDisposed) return;
         if (update is null)
         {

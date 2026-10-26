@@ -9,6 +9,9 @@ namespace RobinCode;
 
 public sealed record UpdateInfo(Version Version, string Tag, Uri Download, long Size, string Sha256);
 
+/// <summary>The update check didn't get a usable answer (offline, rate limited, bad data).</summary>
+public sealed class UpdateCheckException(string message, Exception? inner = null) : Exception(message, inner);
+
 /// <summary>Finds a newer GitHub release and installs it beside the running copy.
 /// Only release metadata is requested; no project text leaves the computer. An update
 /// is offered only when its SHA-256 is known, and the download must match it.</summary>
@@ -36,8 +39,9 @@ public static class Updater
             match.Groups[3].Success ? int.Parse(match.Groups[3].Value) : 0);
     }
 
-    /// <summary>Returns the latest release if it is newer than <paramref name="current"/>, else null.
-    /// Network or format problems also return null: a failed check must never block the app.</summary>
+    /// <summary>Returns the latest release if it is newer than <paramref name="current"/> and installable,
+    /// or null when there is nothing to install. Throws <see cref="UpdateCheckException"/> when GitHub
+    /// couldn't be asked or answered unusably, so callers never mistake "didn't check" for "up to date".</summary>
     public static async Task<UpdateInfo?> CheckAsync(CancellationToken cancel, Version? current = null, HttpClient? http = null)
     {
         try
@@ -47,7 +51,7 @@ public static class Updater
             using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApi);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             using var response = await (http ?? DefaultHttp).SendAsync(request, timeout.Token);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode) throw new UpdateCheckException($"GitHub answered {(int)response.StatusCode}.");
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
             var root = json.RootElement;
             if (root.TryGetProperty("draft", out var draft) && draft.GetBoolean()) return null;
@@ -74,9 +78,9 @@ public static class Updater
             }
             return null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancel.IsCancellationRequested)
+        catch (Exception ex) when (ex is not UpdateCheckException && (ex is not OperationCanceledException || !cancel.IsCancellationRequested))
         {
-            return null;
+            throw new UpdateCheckException("Couldn't reach GitHub.", ex);
         }
     }
 
