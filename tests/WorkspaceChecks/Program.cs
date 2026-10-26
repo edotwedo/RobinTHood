@@ -165,15 +165,22 @@ static class Checks
                 var privacyLine = Field<Label>(form, "privacy");
                 var formSettings = Field<WorkspaceSettings>(form, "settings");
                 bool wasOnline = formSettings.OnlineAllowed;
-                foreach (bool on in new[] { true, false })
+                int originalWidth = form.Width;
+                foreach (int width in new[] { originalWidth, form.MinimumSize.Width })
                 {
-                    formSettings.OnlineAllowed = on;
-                    Call(form, "UpdatePrivacy");
-                    Check(privacyLine.Text.Contains("online") == on && privacyLine.Text.Contains("is off") == !on,
-                        $"privacy line states plainly whether requests leave the computer (assistance {(on ? "on" : "off")})");
-                    Check(TextRenderer.MeasureText(privacyLine.Text, privacyLine.Font).Width <= privacyLine.ClientSize.Width,
-                        $"privacy line fits without clipping (assistance {(on ? "on" : "off")})");
+                    form.Width = width;
+                    form.PerformLayout();
+                    foreach (bool on in new[] { true, false })
+                    {
+                        formSettings.OnlineAllowed = on;
+                        Call(form, "UpdatePrivacy");
+                        Check(privacyLine.Text.Contains("online") == on && privacyLine.Text.Contains("is off") == !on,
+                            $"privacy line states plainly whether requests leave the computer (assistance {(on ? "on" : "off")})");
+                        Check(TextRenderer.MeasureText(privacyLine.Text, privacyLine.Font).Width <= privacyLine.ClientSize.Width,
+                            $"privacy line fits without clipping (assistance {(on ? "on" : "off")}, window {width}px)");
+                    }
                 }
+                form.Width = originalWidth;
                 formSettings.OnlineAllowed = wasOnline;
                 Call(form, "UpdatePrivacy");
                 using var bitmap = new Bitmap(form.Width, form.Height);
