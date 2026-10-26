@@ -52,6 +52,16 @@ static class Checks
                 Check(Field<Button>(empty, "makeDocument").Visible, "handwritten first draft exposes Save draft without requiring an AI answer");
                 Call(empty, "MakeDocument");
                 Check(manualStore.ReadDocument(manualProject) == "A draft I wrote myself", "handwritten first draft becomes the persistent document without inference");
+                var notesProject = manualStore.Create("Notes and Robin's draft", "Song & lyrics");
+                Call(empty, "OpenProject", notesProject);
+                Field<TextBox>(empty, "document").Text = "My original notes";
+                Field<TextBox>(empty, "suggestion").Text = "Robin's new chorus";
+                Call(empty, "UpdateEnabled");
+                Check(Field<Button>(empty, "makeDocument").Text == "Save Robin's draft", "save action identifies Robin's answer when handwritten notes also exist");
+                Call(empty, "MakeDocument");
+                Check(manualStore.ReadDocument(notesProject) == "Robin's new chorus"
+                    && File.ReadAllText(manualStore.Versions(notesProject).Single().Path) == "My original notes",
+                    "saving Robin's answer keeps handwritten notes as a previous version");
                 empty.Close();
             }
             var store = new WorkspaceStore(root);
@@ -148,6 +158,9 @@ static class Checks
                 form.Show();
                 Application.DoEvents();
                 form.PerformLayout();
+                var intent = Field<ComboBox>(form, "mode");
+                Check(TextRenderer.MeasureText(intent.Text, intent.Font).Width + SystemInformation.VerticalScrollBarWidth <= intent.ClientSize.Width,
+                    "document-update choice fits without clipping at the current display scale");
                 Check(editor.Lines.Length == 3, "Unix line endings from AI remain visible as separate lines in Windows editor");
                 using var bitmap = new Bitmap(form.Width, form.Height);
                 form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));

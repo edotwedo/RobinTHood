@@ -9,6 +9,7 @@ public sealed class WorkspaceForm : Form
     readonly bool skipSetup;
     readonly ListBox projects = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = 34 };
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
+    readonly Label searchCaption = new() { Text = "Search projects", Dock = DockStyle.Top, Height = 30, Padding = new Padding(0, 4, 0, 0) };
     readonly TextBox document = Editor("Your document will live here. Write here, or ask Robin for a first draft.");
     readonly TextBox conversation = Editor("Your conversation stays with this project.");
     readonly TextBox suggestion = Editor("Ask Robin for a draft, then save it as your document.");
@@ -18,7 +19,7 @@ public sealed class WorkspaceForm : Form
     readonly Label status = new() { Dock = DockStyle.Bottom, Height = 32, Padding = new Padding(12, 6, 0, 0), Text = "Start a project, or continue something you love." };
     readonly Label privacy = new() { Dock = DockStyle.Top, Height = 34, Padding = new Padding(0, 8, 0, 0) };
     readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+    readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 270 };
     readonly Panel welcome = new() { Dock = DockStyle.Fill, Padding = new Padding(28) };
     readonly FlowLayoutPanel toolbar = new() { Dock = DockStyle.Top, Height = 48, AutoScroll = true };
     readonly Panel compose = new() { Dock = DockStyle.Bottom, Height = 190, Padding = new Padding(0, 12, 0, 0) };
@@ -122,7 +123,8 @@ public sealed class WorkspaceForm : Form
         setup.Height = 42;
         setup.Click += (_, _) => ShowSetup();
         var local = new Label { Text = "Saved on this computer.", Dock = DockStyle.Bottom, Height = 40, Font = new Font("Segoe UI", 9) };
-        sidebar.Controls.AddRange([projects, search, recentLabel, newProject, tagline, brand, local, setup]);
+        search.AccessibleName = "Search projects";
+        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
@@ -230,6 +232,7 @@ public sealed class WorkspaceForm : Form
         try
         {
             var all = store.ListProjects();
+            search.Visible = searchCaption.Visible = all.Count > 0;
             projects.Items.Clear();
             foreach (var p in all.Where(p => p.Name.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase))) projects.Items.Add(p);
             for (int i = 0; i < projects.Items.Count; i++) if (((ProjectEntry)projects.Items[i]).Id == active?.Id) projects.SelectedIndex = i;
@@ -327,13 +330,19 @@ public sealed class WorkspaceForm : Form
     void MakeDocument()
     {
         if (active is null) return;
-        string text = !active.HasDocument && !string.IsNullOrWhiteSpace(document.Text)
-            ? document.Text : !string.IsNullOrWhiteSpace(suggestion.Text) ? suggestion.Text : document.Text;
+        string text = !string.IsNullOrWhiteSpace(suggestion.Text) ? suggestion.Text : document.Text;
         if (string.IsNullOrWhiteSpace(text)) { status.Text = "Write a draft or ask Robin for one first."; return; }
         if (active.HasDocument && MessageBox.Show(this, "Replace your document with the latest answer? The current document will stay in Previous versions.", "Use this answer", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
         try
         {
             if (!SaveActive()) return;
+            if (!active.HasDocument && !string.IsNullOrWhiteSpace(document.Text)
+                && DisplayText(document.Text) != DisplayText(text))
+            {
+                // Keep handwritten notes as a previous version before adopting Robin's draft.
+                store.SaveDocument(active, document.Text, expectedDocument);
+                expectedDocument = document.Text;
+            }
             store.SaveDocument(active, text, expectedDocument);
             expectedDocument = text;
             active.DocumentDraft = null;
@@ -346,7 +355,7 @@ public sealed class WorkspaceForm : Form
             status.Text = "This is your document now. Ask for a change, or edit it yourself.";
         }
         catch (Exception ex) { ShowError(ex); }
-        finally { loading = false; }
+        finally { loading = false; UpdateEnabled(); }
     }
 
     async Task SendAsync()
@@ -399,7 +408,7 @@ public sealed class WorkspaceForm : Form
             project.Draft = "";
             store.Save(project);
             UpdateSaved();
-            status.Text = update ? "Document updated · the earlier version is in Project options → Previous versions." : "Draft kept with your project. Like it? Choose Save draft as document.";
+            status.Text = update ? "Document updated · the earlier version is in Project options → Previous versions." : "Draft kept with your project. Like it? Choose Save Robin's draft.";
         }
         catch (OperationCanceledException) { status.Text = "Stopped. Your document is unchanged; your request is still here."; }
         catch (Exception ex) { ShowError(ex); }
@@ -451,7 +460,8 @@ public sealed class WorkspaceForm : Form
         saveChanges.Visible = conflict;
         makeDocument.Enabled = !busy && active is not null;
         saveChanges.Enabled = !busy && active is not null;
-        makeDocument.Text = active?.HasDocument == true ? "Replace with latest draft" : "Save draft as document";
+        makeDocument.Text = active?.HasDocument == true ? "Replace with latest draft"
+            : !string.IsNullOrWhiteSpace(suggestion.Text) ? "Save Robin's draft" : "Save your draft";
     }
 
     void UpdatePrivacy()

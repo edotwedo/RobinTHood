@@ -36,9 +36,10 @@ folder yourself if you need recovery from device failure.
 
 - `Project.json` contains the title, project type, conversation, last answer and
   unfinished request. Drafts autosave after a short pause.
-- `Document.txt` is an ordinary UTF-8 document. `Save draft as document` turns the
+- `Document.txt` is an ordinary UTF-8 document. `Save Robin's draft` turns the
   latest answer into the project's working file. You can also write directly in
-  the document pane and save that first draft.
+  the document pane and choose `Save your draft`. If handwritten notes already
+  exist when adopting Robin's first answer, the notes are kept in Previous versions.
 - `Update my document` sends the current document with the instruction, then
   replaces that same file only after a successful complete answer. Failed or
   stopped requests leave the document intact. `Talk it through` saves an answer
@@ -78,7 +79,7 @@ unverified checks. A bounded live run on 2026-10-25 produced 64 answers from 67
 root requests using 73 HTTP attempts, with three safety cancellations. It stopped
 at the first rate limit; this does not establish sustained or unlimited capacity.
 
-2026-10-26 interface verification: 31 workspace checks pass, including a real
+2026-10-26 interface verification: 34 workspace checks pass, including a real
 empty state, saving a handwritten first draft without AI, automatic route
 selection, persistence and interruption safety.
 Workspace, empty-state and setup renders were inspected. Lightweight single-worker
