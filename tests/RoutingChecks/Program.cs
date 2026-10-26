@@ -152,6 +152,13 @@ static class Checks
             Assert(!answer.Success && answer.ErrorMessage.Contains("cut"), "token-limit truncation is reported as failure, not a complete document");
             answer=await HttpCase(200,part+"data: {\"error\":{\"code\":\"429\",\"message\":\"limited\"}}\n\n");
             Assert(!answer.Success && answer.HttpStatus==429 && answer.OutputText=="", "mid-stream rate-limit errors are typed and discard incomplete output");
+            foreach (string field in new[] { "code", "type" })
+            foreach (string label in new[] { "rate_limit_exceeded", "rate_limit_error", "too_many_requests" })
+            {
+                string frame=System.Text.Json.JsonSerializer.Serialize(new {error=new Dictionary<string,string>{{field,label}}});
+                answer=await HttpCase(200,part+"data: "+frame+"\n\n");
+                Assert(!answer.Success && answer.HttpStatus==429 && answer.RateLimitIsProviderWide && answer.OutputText=="", $"SSE {field}={label} cools the shared provider and discards partial output");
+            }
             answer=await HttpCase(200,part,last,16500);
             Assert(answer.Success && answer.OutputText=="first second" && answer.ElapsedSeconds>=16, "healthy stream lasting beyond the old 15-second cutoff finishes successfully");
             Console.WriteLine($"{count} routing checks passed; zero external provider requests.");

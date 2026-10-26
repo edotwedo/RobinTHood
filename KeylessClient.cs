@@ -155,7 +155,24 @@ public static class KeylessClient
                     if (frame is null) throw new IOException("The free service sent an invalid answer frame.");
                     if (frame is not null && frame.RootElement.TryGetProperty("error", out var error))
                     {
-                        int code = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var value) && int.TryParse(value.ToString(), out var parsed) ? parsed : 502;
+                        int code = 502;
+                        if (error.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (string field in new[] { "code", "type" })
+                            {
+                                if (!error.TryGetProperty(field, out var value)) continue;
+                                string label = value.ToString();
+                                if (int.TryParse(label, out var parsed)) code = parsed;
+                                if (label.Equals("rate_limit_exceeded", StringComparison.OrdinalIgnoreCase)
+                                    || label.Equals("rate_limit_error", StringComparison.OrdinalIgnoreCase)
+                                    || label.Equals("too_many_requests", StringComparison.OrdinalIgnoreCase)
+                                    || code == 429)
+                                {
+                                    code = 429;
+                                    break;
+                                }
+                            }
+                        }
                         throw new ProviderFailure("The free service reported an error during its answer.", (System.Net.HttpStatusCode)code, null);
                     }
                     if (frame is not null && frame.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0 && choices[0].TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String)

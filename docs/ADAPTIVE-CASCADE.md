@@ -72,6 +72,16 @@ Primary sources:
 
 ## Validation
 
+Auto mode buffers each candidate answer until completion, including in the
+classic window. Text can therefore remain blank while a provider works for up
+to 90 seconds. Five sequential native routes can take up to 7.5 minutes before
+optional CLI fallback; there is currently no overall cascade deadline. Cancel
+remains available. Buffering prevents a failed partial answer from being saved.
+
+SSE error codes/types `rate_limit_exceeded`, `rate_limit_error` and
+`too_many_requests` are treated as provider-wide 429 refusals, just like numeric
+429, so sibling models do not bypass a shared quota.
+
 `dotnet run --project tests/RoutingChecks/RoutingChecks.csproj -c Release`
 exercises cooldown scope/expiry, earliest retry, no calls during cooldown,
 auth/missing-model distinctions, load distribution, two-call concurrency, shared
