@@ -14,6 +14,11 @@ download can then be removed. Existing versions are left intact. No administrato
 access, account, purchase or machine-wide installation is needed. Setup remains
 available as Settings in the sidebar.
 
+Desktop setup copies only the downloaded executable for a single-file build.
+For a folder build it copies the exact app files and dependencies named in
+`RobinTHood.deps.json`, including declared native libraries and resources.
+Unrelated neighboring downloads are never included.
+
 Online assistance is **off by default**. Enabling it sends the current project's
 document, request and bounded recent conversation to an online model provider.
 There is no cloud document storage or synchronization. The everyday workspace
