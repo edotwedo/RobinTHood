@@ -3,12 +3,13 @@ namespace RobinCode;
 static class Program
 {
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
         try
         {
+            Updater.WaitForPreviousCopy(args);
             ApplicationConfiguration.Initialize();
-            Application.Run(new WorkspaceForm());
+            Application.Run(new WorkspaceForm(updateCheck: token => Updater.CheckAsync(token)));
         }
         catch (Exception ex)
         {
