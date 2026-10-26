@@ -162,6 +162,20 @@ static class Checks
                 Check(TextRenderer.MeasureText(intent.Text, intent.Font).Width + SystemInformation.VerticalScrollBarWidth <= intent.ClientSize.Width,
                     "document-update choice fits without clipping at the current display scale");
                 Check(editor.Lines.Length == 3, "Unix line endings from AI remain visible as separate lines in Windows editor");
+                var privacyLine = Field<Label>(form, "privacy");
+                var formSettings = Field<WorkspaceSettings>(form, "settings");
+                bool wasOnline = formSettings.OnlineAllowed;
+                foreach (bool on in new[] { true, false })
+                {
+                    formSettings.OnlineAllowed = on;
+                    Call(form, "UpdatePrivacy");
+                    Check(privacyLine.Text.Contains("online") == on && privacyLine.Text.Contains("is off") == !on,
+                        $"privacy line states plainly whether requests leave the computer (assistance {(on ? "on" : "off")})");
+                    Check(TextRenderer.MeasureText(privacyLine.Text, privacyLine.Font).Width <= privacyLine.ClientSize.Width,
+                        $"privacy line fits without clipping (assistance {(on ? "on" : "off")})");
+                }
+                formSettings.OnlineAllowed = wasOnline;
+                Call(form, "UpdatePrivacy");
                 using var bitmap = new Bitmap(form.Width, form.Height);
                 form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
                 string screenshot = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(root, "workspace.png");
