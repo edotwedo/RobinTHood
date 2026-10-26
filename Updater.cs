@@ -87,6 +87,9 @@ public static class Updater
     {
         string root = installationRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "RobinTHood");
         Directory.CreateDirectory(root);
+        // Partial files from an update interrupted by a crash or power loss.
+        foreach (string stale in Directory.EnumerateFiles(root, ".download-*.exe"))
+            try { if (File.GetLastWriteTimeUtc(stale) < DateTime.UtcNow.AddHours(-1)) File.Delete(stale); } catch (IOException) { }
         string temp = Path.Combine(root, $".download-{Guid.NewGuid():N}.exe");
         try
         {
