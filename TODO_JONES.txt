@@ -1,0 +1,12 @@
+NOTE FOR JONES — KeylessClient Fixes
+
+1. In KeylessClient.cs -> CreateClient():
+Add: client.DefaultRequestHeaders.UserAgent.ParseAdd("RobinTHood-Desktop/0.2 (Windows)");
+
+2. In KeylessClient.cs -> StreamResponseAsync():
+Add a 1.2s micro-retry on 502/503 before penalizing the cascade.
+
+3. Increase initial token timeout from 30s to 45s for 120B models.
+
+Verify:
+dotnet run --project tests/WorkspaceChecks/WorkspaceChecks.csproj
