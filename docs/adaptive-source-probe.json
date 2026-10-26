@@ -1,0 +1,24 @@
+[
+  {
+    "id": "kilo-lightning",
+    "at": "2026-10-26T05:35:18.6503545+00:00",
+    "Success": true,
+    "ModelUsed": "kilo-lightning",
+    "HttpStatus": null,
+    "RetryAfterUtc": null,
+    "ElapsedSeconds": 3.782,
+    "ErrorMessage": "",
+    "OutputText": "READY"
+  },
+  {
+    "id": "kilo-laguna",
+    "at": "2026-10-26T05:35:20.9363856+00:00",
+    "Success": false,
+    "ModelUsed": "kilo-laguna",
+    "HttpStatus": 429,
+    "RetryAfterUtc": null,
+    "ElapsedSeconds": 0.25,
+    "ErrorMessage": "HTTP 429 from kilo-laguna - rate limited by the provider: {\u0022error\u0022:{\u0022message\u0022:\u0022Provider returned error\u0022,\u0022code\u0022:429,\u0022metadata\u0022:{\u0022raw\u0022:\u0022poolside/laguna-xs-2.1:free is temporarily rate-limited upstream. Please retry shortly, or add your own ",
+    "OutputText": ""
+  }
+]

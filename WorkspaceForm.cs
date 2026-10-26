@@ -38,7 +38,8 @@ public sealed class WorkspaceForm : Form
         store = workspace ?? new WorkspaceStore();
         settings = store.LoadSettings();
         this.skipSetup = skipSetup;
-        generate = generator ?? ((prompt, model, token) => FreeAggregator.RunPromptStreamAsync(prompt, model, null, token));
+        generate = generator ?? ((prompt, model, token) => FreeAggregator.RunPromptStreamAsync(prompt, model, null, token,
+            message => { if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(() => { if (!IsDisposed) status.Text = message; })); }));
         Text = "RobinTHood — Your creative workspace";
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(1160, 830);
