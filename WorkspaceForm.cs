@@ -10,6 +10,7 @@ public sealed class WorkspaceForm : Form
     readonly Func<CancellationToken, Task<UpdateInfo?>>? updateCheck;
     readonly Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> updateInstall;
     readonly Button updateButton = ActionButton("Update available");
+    readonly Label updateLine = new() { Dock = DockStyle.Bottom, Height = 36, Font = new Font("Segoe UI", 9), Text = "Checking GitHub for an update…" };
     UpdateInfo? availableUpdate;
     string? relaunchAfterClose;
     CancellationTokenSource? updateDownload;
@@ -168,7 +169,7 @@ public sealed class WorkspaceForm : Form
         updateButton.Click += async (_, _) => await InstallUpdateAsync();
         busyDisabled.Add(updateButton);
         search.AccessibleName = "Search projects";
-        sidebar.Controls.AddRange([projects, search, recentLabel, newProject, tagline, brand, updateButton, setup]);
+        sidebar.Controls.AddRange([projects, search, recentLabel, newProject, tagline, brand, updateLine, updateButton, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
@@ -228,12 +229,24 @@ public sealed class WorkspaceForm : Form
 
     async Task CheckForUpdateAsync()
     {
-        if (updateCheck is null) return;
+        string here = "v" + Updater.CurrentVersion.ToString(3);
+        if (updateCheck is null)
+        {
+            updateLine.Text = here;
+            return;
+        }
+        updateLine.Text = "Checking GitHub for an update…";
         var update = await updateCheck(CancellationToken.None);
-        if (update is null || IsDisposed) return;
+        if (IsDisposed) return;
+        if (update is null)
+        {
+            updateLine.Text = here + " · up to date";
+            return;
+        }
         availableUpdate = update;
         updateButton.Text = $"Update to v{update.Version}";
         updateButton.Visible = true;
+        updateLine.Text = "A newer release is on GitHub.";
     }
 
     async Task InstallUpdateAsync()

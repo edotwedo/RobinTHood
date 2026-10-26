@@ -262,6 +262,18 @@ static class Checks
             {
                 Check(!Field<Button>(form, "updateButton").Visible, "no update button without an update check");
             }
+            using (var current = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(null)))
+            {
+                current.StartPosition = FormStartPosition.Manual;
+                current.Location = new Point(-20000, -20000);
+                current.ShowInTaskbar = false;
+                current.Show();
+                for (int i = 0; i < 20 && !Field<Label>(current, "updateLine").Text.Contains("up to date"); i++) { Application.DoEvents(); Thread.Sleep(10); }
+                var line = Field<Label>(current, "updateLine");
+                Check(line.Visible && line.Text.Contains("up to date") && !Field<Button>(current, "updateButton").Visible,
+                    "a current copy says it is up to date instead of hiding the update check");
+                current.Hide();
+            }
             var offered = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", new Uri("https://example.invalid/RobinTHood.exe"), 1, new string('0', 64));
             using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
                        updateInstall: (_, _, _) => throw new IOException("offline test")))
