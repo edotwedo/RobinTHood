@@ -7,6 +7,15 @@ public sealed class WorkspaceForm : Form
     readonly WorkspaceSettings settings;
     readonly Func<string, string, CancellationToken, Task<CompletionResult>> generate;
     readonly bool skipSetup;
+    readonly Func<CancellationToken, Task<UpdateInfo?>>? updateCheck;
+    readonly Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> updateInstall;
+    readonly Button updateButton = ActionButton("Update available");
+    UpdateInfo? availableUpdate;
+    string? relaunchAfterClose;
+    CancellationTokenSource? updateDownload;
+    // Replaced only by offline checks, which must never start a real process.
+    static Action<string> Relaunch = Updater.Relaunch;
+    bool closeWhenUpdateStops;
     readonly ListBox projects = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = 34 };
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
     readonly Label searchCaption = new() { Text = "Search projects", Dock = DockStyle.Top, Height = 30, Padding = new Padding(0, 4, 0, 0) };
@@ -38,8 +47,12 @@ public sealed class WorkspaceForm : Form
     CancellationTokenSource? cancellation;
 
     public WorkspaceForm(WorkspaceStore? workspace = null, bool skipSetup = false,
-        Func<string, string, CancellationToken, Task<CompletionResult>>? generator = null)
+        Func<string, string, CancellationToken, Task<CompletionResult>>? generator = null,
+        Func<CancellationToken, Task<UpdateInfo?>>? updateCheck = null,
+        Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>>? updateInstall = null)
     {
+        this.updateCheck = updateCheck;
+        this.updateInstall = updateInstall ?? ((update, progress, token) => Updater.InstallAsync(update, progress, token));
         store = workspace ?? new WorkspaceStore();
         settings = store.LoadSettings();
         this.skipSetup = skipSetup;
@@ -123,8 +136,13 @@ public sealed class WorkspaceForm : Form
         setup.Height = 42;
         setup.Click += (_, _) => ShowSetup();
         var local = new Label { Text = "Saved on this computer.", Dock = DockStyle.Bottom, Height = 40, Font = new Font("Segoe UI", 9) };
+        updateButton.Dock = DockStyle.Bottom;
+        updateButton.Height = 42;
+        updateButton.Visible = false;
+        updateButton.Click += async (_, _) => await InstallUpdateAsync();
+        busyDisabled.Add(updateButton);
         search.AccessibleName = "Search projects";
-        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, setup]);
+        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, updateButton, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
@@ -177,6 +195,80 @@ public sealed class WorkspaceForm : Form
             if (last is not null) OpenProject(last);
         }
         UpdatePrivacy();
+        _ = CheckForUpdateAsync();
+    }
+
+    async Task CheckForUpdateAsync()
+    {
+        if (updateCheck is null) return;
+        var update = await updateCheck(CancellationToken.None);
+        if (update is null || IsDisposed) return;
+        availableUpdate = update;
+        updateButton.Text = $"Update to v{update.Version}";
+        updateButton.Visible = true;
+    }
+
+    async Task InstallUpdateAsync()
+    {
+        // Already installed: the button now finishes the update by restarting.
+        if (relaunchAfterClose is not null) { Close(); return; }
+        if (availableUpdate is not { } update || busy || updateDownload is not null) return;
+        string size = update.Size > 0 ? $" ({update.Size / 1048576.0:0.#} MB)" : "";
+        if (MessageBox.Show(this, $"Download RobinTHood v{update.Version}{size} from GitHub and restart? Your work is saved first.",
+                "Update RobinTHood", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+        await RunUpdateAsync(update);
+    }
+
+    async Task RunUpdateAsync(UpdateInfo update)
+    {
+        if (busy || updateDownload is not null || relaunchAfterClose is not null) return;
+        if (!SaveActive()) return;
+        var download = updateDownload = new CancellationTokenSource();
+        UpdateEnabled();
+        try
+        {
+            var progress = new Progress<int>(percent => { if (!IsDisposed && updateDownload is not null) status.Text = $"Downloading the update… {percent}%"; });
+            string executable = await updateInstall(update, progress, download.Token);
+            if (download.IsCancellationRequested)
+                status.Text = "Update installed. It opens next time you start RobinTHood from its shortcut.";
+            else
+            {
+                // Kept until a close is actually accepted, so a cancelled close can't lose it.
+                relaunchAfterClose = executable;
+                updateButton.Text = "Restart to finish update";
+                status.Text = "Update ready. Restarting RobinTHood…";
+            }
+        }
+        catch (OperationCanceledException) when (download.IsCancellationRequested)
+        {
+            status.Text = "Update stopped. Your current version still works.";
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Update didn't finish: " + ex.Message + " Your current version still works.";
+        }
+        finally
+        {
+            updateDownload = null;
+            download.Dispose();
+            if (!IsDisposed) UpdateEnabled();
+        }
+        if (closeWhenUpdateStops) { closeWhenUpdateStops = false; Close(); }
+        else if (relaunchAfterClose is not null)
+        {
+            Close();
+            if (!IsDisposed && Visible) status.Text = "Update ready. Choose Restart to finish update when you're done.";
+        }
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        base.OnFormClosed(e);
+        if (relaunchAfterClose is { } executable)
+        {
+            try { Relaunch(executable); }
+            catch (Exception ex) { MessageBox.Show("The update is installed but couldn't start: " + ex.Message + "\nOpen RobinTHood again to use it.", "Update RobinTHood"); }
+        }
     }
 
     Form CreateSetupDialog()
@@ -192,7 +284,7 @@ public sealed class WorkspaceForm : Form
         var shortcut = new CheckBox { Text = "Put Robin on my desktop (keeps an app copy outside Downloads)", Checked = true, AutoSize = true, MaximumSize = new Size(560, 0) };
         layout.Controls.Add(online);
         layout.Controls.Add(shortcut);
-        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
+        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent, and nothing installs unless you choose Update.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
         var done = ActionButton("Open my workspace");
         done.Click += (_, _) =>
         {
@@ -446,6 +538,8 @@ public sealed class WorkspaceForm : Form
     void UpdateEnabled()
     {
         foreach (var c in busyDisabled) c.Enabled = !busy;
+        // Single-flight: ordinary editing must not re-enable the button during a download.
+        updateButton.Enabled = !busy && updateDownload is null;
         projects.Enabled = search.Enabled = !busy;
         input.Enabled = !busy && active is not null;
         document.ReadOnly = busy || active is null;
@@ -530,7 +624,15 @@ public sealed class WorkspaceForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (busy)
+        if (updateDownload is not null)
+        {
+            // Let the download stop and clean up its partial file, then close.
+            updateDownload.Cancel();
+            closeWhenUpdateStops = true;
+            status.Text = "Stopping the update download, then closing…";
+            e.Cancel = true;
+        }
+        else if (busy)
         {
             cancellation?.Cancel();
             status.Text = "Stopping Robin safely. Close again after the request stops.";
@@ -545,7 +647,7 @@ public sealed class WorkspaceForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { saveTimer.Dispose(); cancellation?.Dispose(); projectLock?.Dispose(); projectMenu.Dispose(); }
+        if (disposing) { saveTimer.Dispose(); cancellation?.Dispose(); updateDownload?.Dispose(); projectLock?.Dispose(); projectMenu.Dispose(); }
         base.Dispose(disposing);
     }
 }

@@ -249,6 +249,91 @@ static class Checks
                 Call(form, "TryOpenByRequest", "bring back Midnight song");
                 Check(Field<Label>(form, "status").Text.Contains("already open"), "saved project can be found by a plain-language request locally");
             }
+            using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake))
+            {
+                Check(!Field<Button>(form, "updateButton").Visible, "no update button without an update check");
+            }
+            var offered = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", new Uri("https://example.invalid/RobinTHood.exe"), 1, new string('0', 64));
+            using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
+                       updateInstall: (_, _, _) => throw new IOException("offline test")))
+            {
+                form.StartPosition = FormStartPosition.Manual;
+                form.Location = new Point(-20000, -20000);
+                form.ShowInTaskbar = false;
+                form.Show();
+                for (int i = 0; i < 20 && !Field<Button>(form, "updateButton").Visible; i++) { Application.DoEvents(); Thread.Sleep(10); }
+                var button = Field<Button>(form, "updateButton");
+                Check(button.Visible && button.Text == "Update to v9.9.9", "available update shows a one-click update button with its version");
+                var settingsButton = button.Parent!.Controls.OfType<Button>().Single(b => b.Text == "Settings");
+                Check(button.Height >= 30 && button.Bottom <= settingsButton.Top && button.Top >= 0,
+                    "update button is actually on screen, just above Settings (not collapsed behind the project list)");
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                string updatePreview = Path.Combine(args.Length > 0 ? Path.GetDirectoryName(Path.GetFullPath(args[0]))! : root, "update-available.png");
+                bitmap.Save(updatePreview);
+                Console.WriteLine("PREVIEW " + updatePreview);
+                form.Hide();
+            }
+
+            // Update lifecycle, offline: the install is a controllable fake and relaunch is recorded, never run.
+            var relaunched = new List<string>();
+            var relaunchField = typeof(WorkspaceForm).GetField("Relaunch", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var realRelaunch = relaunchField.GetValue(null);
+            relaunchField.SetValue(null, new Action<string>(relaunched.Add));
+            void Pump(Func<bool> until) { for (int i = 0; i < 300 && !until(); i++) { Application.DoEvents(); Thread.Sleep(5); } }
+            WorkspaceForm UpdateForm(Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> install)
+            {
+                var f = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered), updateInstall: install)
+                    { StartPosition = FormStartPosition.Manual, Location = new Point(-20000, -20000), ShowInTaskbar = false };
+                f.Show();
+                Pump(() => Field<Button>(f, "updateButton").Visible);
+                Call(f, "OpenProject", store.ListProjects().Single());
+                return f;
+            }
+            try
+            {
+                // 1. Editing during a download cannot re-enable the button or start a second install.
+                int installs = 0;
+                var hold = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var form = UpdateForm((_, _, token) => { installs++; token.Register(() => hold.TrySetCanceled(token)); return hold.Task; });
+                var first = (Task)Call(form, "RunUpdateAsync", offered)!;
+                Field<TextBox>(form, "document").AppendText(" edited during download");
+                Application.DoEvents();
+                Check(!Field<Button>(form, "updateButton").Enabled, "editing during an update download keeps the update button disabled");
+                var second = (Task)Call(form, "RunUpdateAsync", offered)!;
+                Pump(() => second.IsCompleted);
+                Check(installs == 1, "a second update request while one is downloading does nothing");
+
+                // 2. Closing during the download stops it, cleans up through the installer's cancellation, then closes without relaunching.
+                form.Close();
+                Check(!form.IsDisposed && Field<Label>(form, "status").Text.Contains("Stopping the update"), "closing during a download first stops the download");
+                Pump(() => form.IsDisposed);
+                Check(form.IsDisposed && first.IsCompleted && relaunched.Count == 0, "after the download stops the window closes and nothing is relaunched");
+
+                // 3. A cancelled close keeps the installed update; the next accepted close relaunches it.
+                form = UpdateForm((_, _, _) => Task.FromResult(@"C:\updates\RobinTHood.exe"));
+                int vetoes = 1;
+                form.FormClosing += (_, e) => { if (vetoes-- > 0) e.Cancel = true; };
+                var done = (Task)Call(form, "RunUpdateAsync", offered)!;
+                Pump(() => done.IsCompleted);
+                var restart = Field<Button>(form, "updateButton");
+                Check(!form.IsDisposed && restart.Enabled && restart.Text == "Restart to finish update" && relaunched.Count == 0,
+                    "a cancelled automatic close keeps the update ready behind 'Restart to finish update'");
+                restart.PerformClick();
+                Pump(() => form.IsDisposed);
+                Check(form.IsDisposed && relaunched.SequenceEqual([@"C:\updates\RobinTHood.exe"]), "the next accepted close relaunches the installed update exactly once");
+
+                // 4. A failed install leaves the app usable and the button available to try again.
+                form = UpdateForm((_, _, _) => Task.FromException<string>(new IOException("fingerprint mismatch")));
+                var failed = (Task)Call(form, "RunUpdateAsync", offered)!;
+                Pump(() => failed.IsCompleted);
+                Check(Field<Button>(form, "updateButton").Enabled && Field<Label>(form, "status").Text.Contains("still works") && !form.IsDisposed,
+                    "a failed update reports the problem and leaves the current version running");
+                form.Close();
+                Pump(() => form.IsDisposed);
+                Check(relaunched.Count == 1, "closing after a failed update relaunches nothing");
+            }
+            finally { relaunchField.SetValue(null, realRelaunch); }
             File.Delete(store.DocumentPath(p));
             Throws<IOException>(() => store.ReadDocument(p), "missing document is reported instead of silently recreated");
             Console.WriteLine($"{count} checks passed; no online providers called.");
