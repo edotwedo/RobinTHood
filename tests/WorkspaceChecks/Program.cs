@@ -31,6 +31,39 @@ static class Checks
         try
         {
             ApplicationConfiguration.Initialize();
+            using (var empty = new WorkspaceForm(new WorkspaceStore(Path.Combine(root, "empty")), skipSetup: true, generator: (_, _, _) => throw new Exception("Empty workspace must not generate")))
+            {
+                empty.StartPosition = FormStartPosition.Manual;
+                empty.Location = new Point(-20000, -20000);
+                empty.ShowInTaskbar = false;
+                empty.Show();
+                Application.DoEvents();
+                Check(Field<Panel>(empty, "welcome").Visible && !Field<TabControl>(empty, "tabs").Visible && !Field<Button>(empty, "send").Visible,
+                    "empty workspace offers a project start instead of inactive editors and routing controls");
+                using var preview = new Bitmap(empty.Width, empty.Height);
+                empty.DrawToBitmap(preview, new Rectangle(Point.Empty, empty.Size));
+                string emptyPreview = args.Length > 0 ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "empty-workspace.png") : Path.Combine(root, "empty-workspace.png");
+                preview.Save(emptyPreview);
+                Console.WriteLine("PREVIEW " + emptyPreview);
+                var manualStore = Field<WorkspaceStore>(empty, "store");
+                var manualProject = manualStore.Create("My handwritten draft", "Story & writing");
+                Call(empty, "OpenProject", manualProject);
+                Field<TextBox>(empty, "document").Text = "A draft I wrote myself";
+                Check(Field<Button>(empty, "makeDocument").Visible, "handwritten first draft exposes Save draft without requiring an AI answer");
+                Call(empty, "MakeDocument");
+                Check(manualStore.ReadDocument(manualProject) == "A draft I wrote myself", "handwritten first draft becomes the persistent document without inference");
+                var notesProject = manualStore.Create("Notes and Robin's draft", "Song & lyrics");
+                Call(empty, "OpenProject", notesProject);
+                Field<TextBox>(empty, "document").Text = "My original notes";
+                Field<TextBox>(empty, "suggestion").Text = "Robin's new chorus";
+                Call(empty, "UpdateEnabled");
+                Check(Field<Button>(empty, "makeDocument").Text == "Save Robin's draft", "save action identifies Robin's answer when handwritten notes also exist");
+                Call(empty, "MakeDocument");
+                Check(manualStore.ReadDocument(notesProject) == "Robin's new chorus"
+                    && File.ReadAllText(manualStore.Versions(notesProject).Single().Path) == "My original notes",
+                    "saving Robin's answer keeps handwritten notes as a previous version");
+                empty.Close();
+            }
             var store = new WorkspaceStore(root);
             var p = store.Create("Midnight song", "Song & lyrics");
             store.SaveDocument(p, "Verse one\nChorus one", "");
@@ -78,6 +111,7 @@ static class Checks
             bool waitForCancel = false;
             Func<string, string, CancellationToken, Task<CompletionResult>> fake = (text, model, token) =>
             {
+                if (model != "auto") throw new Exception("Workspace must select assistance automatically");
                 generations++;
                 if (waitForCancel) return WaitForCancellation(token);
                 if (fail) return Task.FromResult(new CompletionResult(false, "offline-test", "", 0, "Provider unavailable"));
@@ -92,9 +126,7 @@ static class Checks
                 input.Text = "Rewrite the chorus";
                 ((Task)Call(form, "SendAsync")!).GetAwaiter().GetResult();
                 Check(generations == 0, "local-only setting blocks online generation before any call");
-                var engine = Field<ComboBox>(form, "engine");
-                engine.Items.Add(new FreeModelInfo("ollama:test", "Offline test", "", "", true));
-                engine.SelectedIndex = 1;
+                Field<WorkspaceSettings>(form, "settings").OnlineAllowed = true;
                 ((Task)Call(form, "SendAsync")!).GetAwaiter().GetResult();
                 Check(generations == 1 && editor.Text.ReplaceLineEndings("\n") == "Verse one\nA hopeful chorus", "successful revision updates the same document through actual UI flow");
                 Check(store.ReadDocument(p) == editor.Text && store.Versions(p).Count == 2, "AI revision is persisted and previous external edit retained");
@@ -126,6 +158,9 @@ static class Checks
                 form.Show();
                 Application.DoEvents();
                 form.PerformLayout();
+                var intent = Field<ComboBox>(form, "mode");
+                Check(TextRenderer.MeasureText(intent.Text, intent.Font).Width + SystemInformation.VerticalScrollBarWidth <= intent.ClientSize.Width,
+                    "document-update choice fits without clipping at the current display scale");
                 Check(editor.Lines.Length == 3, "Unix line endings from AI remain visible as separate lines in Windows editor");
                 using var bitmap = new Bitmap(form.Width, form.Height);
                 form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
@@ -133,6 +168,7 @@ static class Checks
                 bitmap.Save(screenshot);
                 Console.WriteLine("PREVIEW " + screenshot);
                 form.Hide();
+                Field<WorkspaceSettings>(form, "settings").OnlineAllowed = false;
                 using var setupForm = (Form)Call(form, "CreateSetupDialog")!;
                 setupForm.StartPosition = FormStartPosition.Manual;
                 setupForm.Location = new Point(-20000, -20000);
@@ -140,7 +176,7 @@ static class Checks
                 setupForm.Show();
                 Application.DoEvents();
                 var setupControls = setupForm.Controls[0].Controls.Cast<Control>().ToList();
-                var online = setupControls.OfType<CheckBox>().First(c => c.Text.StartsWith("Allow free"));
+                var online = setupControls.OfType<CheckBox>().First(c => c.Text.StartsWith("Enable Robin"));
                 Check(!online.Checked, "onboarding leaves online assistance off by default");
                 using var setupBitmap = new Bitmap(setupForm.Width, setupForm.Height);
                 setupForm.DrawToBitmap(setupBitmap, new Rectangle(Point.Empty, setupForm.Size));

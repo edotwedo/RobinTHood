@@ -73,7 +73,7 @@ internal sealed class AdaptiveCascade
                     }
                 }
                 if (selected is not { } target) break;
-                status?.Invoke(failures.Count == 0 ? "Robin is working on your request…" : "Trying another available free service…");
+                status?.Invoke(failures.Count == 0 ? "Robin is working on your request…" : "Still working on your request…");
                 CompletionResult result;
                 try { result = await send(prompt, target.Id, cancel); }
                 catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
@@ -112,8 +112,8 @@ internal sealed class AdaptiveCascade
             ready = future.Length == 0 ? null : future.Min();
         }
         string message = ready is { } retryAt
-            ? $"Free services need a short pause. Try again in {Math.Max(1, (int)Math.Ceiling((retryAt - now()).TotalSeconds))} seconds. Your request is still saved."
-            : "No free service could finish this request. Your request is still saved; please try again.";
+            ? $"Robin needs a short pause. Try again in {Math.Max(1, (int)Math.Ceiling((retryAt - now()).TotalSeconds))} seconds. Your request is still saved."
+            : "Robin couldn't finish this request. Your request is still saved; please try again.";
         return new(false, "offline", "", watch.Elapsed.TotalSeconds, message, RetryAfterUtc: ready, Diagnostics: string.Join(" | ", failures));
     }
 }

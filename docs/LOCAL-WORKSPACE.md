@@ -12,13 +12,19 @@ copies the application and its runtime dependencies to
 `%LOCALAPPDATA%\Programs\RobinTHood\<build hash>` before creating the link. The
 download can then be removed. Existing versions are left intact. No administrator
 access, account, purchase or machine-wide installation is needed. Setup remains
-available in the sidebar.
+available as Settings in the sidebar.
 
 Online assistance is **off by default**. Enabling it sends the current project's
 document, request and bounded recent conversation to an online model provider.
-There is no cloud document storage or synchronization. Installed Ollama models
-appear as `On this computer`; that route doesn't fall back to online providers.
-Without a local model, local-only mode still supports writing and reopening work.
+There is no cloud document storage or synchronization. The everyday workspace
+selects routes automatically; it has no provider/model selector and does not
+discover or run PC Ollama models. With assistance switched off, writing and
+reopening projects still work.
+
+The empty workspace offers Start a project. With a project open, the primary
+actions are Ask Robin and saving a draft as a document. Rename, previous versions,
+opening the folder and exporting a copy live under Project options. Routine edits
+save automatically; Save changes appears only for recovered/conflicting drafts.
 
 ## Documents and continuity
 
@@ -30,9 +36,10 @@ folder yourself if you need recovery from device failure.
 
 - `Project.json` contains the title, project type, conversation, last answer and
   unfinished request. Drafts autosave after a short pause.
-- `Document.txt` is an ordinary UTF-8 document. `Make this a document` turns the
+- `Document.txt` is an ordinary UTF-8 document. `Save Robin's draft` turns the
   latest answer into the project's working file. You can also write directly in
-  the document pane and save that first draft.
+  the document pane and choose `Save your draft`. If handwritten notes already
+  exist when adopting Robin's first answer, the notes are kept in Previous versions.
 - `Update my document` sends the current document with the instruction, then
   replaces that same file only after a successful complete answer. Failed or
   stopped requests leave the document intact. `Talk it through` saves an answer
@@ -68,7 +75,15 @@ shortcut created entirely in a temporary sandbox, local-only enforcement, succes
 and failure through the UI generation handler, onboarding, and restart continuity.
 They render workspace and onboarding previews for visual inspection. Actual model
 quality, fresh-machine execution and long-running provider capacity are separate
-unverified checks. The stress test is deferred by Phil.
+unverified checks. A bounded live run on 2026-10-25 produced 64 answers from 67
+root requests using 73 HTTP attempts, with three safety cancellations. It stopped
+at the first rate limit; this does not establish sustained or unlimited capacity.
+
+2026-10-26 interface verification: 34 workspace checks pass, including a real
+empty state, saving a handwritten first draft without AI, automatic route
+selection, persistence and interruption safety.
+Workspace, empty-state and setup renders were inspected. Lightweight single-worker
+compilation passes without warnings; no local model or live provider was used.
 
 Ihalp verification, 2026-10-25: 28 offline checks passed; release build and
 self-contained win-x64 publish succeeded. Workspace and onboarding renders were

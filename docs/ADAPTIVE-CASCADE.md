@@ -77,7 +77,7 @@ classic window. Text can therefore remain blank while a provider works for up
 to 90 seconds per candidate. Auto now has one two-minute deadline across queue
 waits, native routes and optional CLI fallback. Exhausting that budget cancels
 the active request or CLI process and stops further attempts. Robin reports that
-the request is still saved; the user can retry or select an installed local model.
+the request is still saved; the user can retry.
 User cancellation remains distinct from a timeout. Buffering prevents a failed
 partial answer from being saved. Explicit model choices retain their existing
 individual time limits.
