@@ -467,7 +467,7 @@ public sealed class WorkspaceForm : Form
     void UpdatePrivacy()
     {
         privacy.Text = settings.OnlineAllowed
-            ? "Saved on this computer · Ask Robin sends your request and document online"
+            ? "Saved on this computer · Ask Robin sends text online"
             : "Saved on this computer · Writing assistance is off";
     }
 
