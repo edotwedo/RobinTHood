@@ -14,6 +14,71 @@ static class Checks
         count++;
     }
     static KeylessClient.Endpoint E(string id, string host) => new(id, id, "https://" + host + "/chat");
+
+    sealed class FakeGitHub(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public int Requests;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
+        { Requests++; return Task.FromResult(respond(request)); }
+    }
+
+    static async Task UpdaterChecks()
+    {
+        byte[] exe = Encoding.UTF8.GetBytes("pretend RobinTHood v0.4.0 executable");
+        string sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(exe)).ToLowerInvariant();
+        string Release(string tag, string? digest, string body = "", bool draft = false, string asset = "RobinTHood.exe", int? size = null) =>
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                tag_name = tag, draft, prerelease = false, body,
+                assets = new[] { new Dictionary<string, object?> { ["name"] = asset, ["size"] = size ?? exe.Length,
+                    ["browser_download_url"] = "https://github.com/edotwedo/RobinTHood/releases/download/" + tag + "/" + asset, ["digest"] = digest } }
+            });
+        HttpClient Serve(string json, byte[]? download = null) => new(new FakeGitHub(r =>
+            r.RequestUri!.AbsoluteUri == Updater.LatestReleaseApi
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(download ?? exe) }));
+        var current = new Version(0, 3, 2);
+
+        var update = await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", "sha256:" + sha)));
+        Assert(update is { Tag: "v0.4.0" } && update.Sha256 == sha && update.Size == exe.Length, "newer release with an asset digest is offered");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.3.2", "sha256:" + sha))) is null, "same version is not offered");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.3.1", "sha256:" + sha))) is null, "older version is never offered");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", "sha256:" + sha, draft: true))) is null, "draft release is not offered");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", null))) is null, "release with no known fingerprint is not offered");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", null, $"SHA-256: `{sha}`"))) is { } noted && noted.Sha256 == sha,
+            "fingerprint published in release notes is accepted when the API digest is missing");
+        Assert(await Updater.CheckAsync(default, current, Serve(Release("v0.4.0", "sha256:" + sha, asset: "Other.zip"))) is null, "release without the Windows exe is not offered");
+        Assert(await Updater.CheckAsync(default, current, new HttpClient(new FakeGitHub(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)))) is null,
+            "rate-limited or failed check quietly offers nothing");
+        Assert(await Updater.CheckAsync(default, current, Serve("not json")) is null, "malformed release data quietly offers nothing");
+
+        string root = Path.Combine(Path.GetTempPath(), "robin-update-check-" + Guid.NewGuid().ToString("N"));
+        string desktop = Path.Combine(root, "desktop");
+        Directory.CreateDirectory(desktop);
+        try
+        {
+            string installed = await Updater.InstallAsync(update!, null, default, Serve("", exe), Path.Combine(root, "programs"), desktop);
+            Assert(File.ReadAllBytes(installed).SequenceEqual(exe) && Path.GetFileName(Path.GetDirectoryName(installed)) == sha.ToUpperInvariant()[..12],
+                "verified update installs into its own fingerprint folder");
+            Assert(!File.Exists(Path.Combine(desktop, "RobinTHood.lnk")), "update never creates a desktop shortcut the user declined");
+            Assert(!Directory.EnumerateFiles(Path.Combine(root, "programs")).Any(), "no partial download is left behind");
+
+            var tampered = Encoding.UTF8.GetBytes("pretend RobinTHood v0.4.0 executablX");
+            bool rejected = false;
+            try { await Updater.InstallAsync(update!, null, default, Serve("", tampered), Path.Combine(root, "tampered"), desktop); }
+            catch (IOException) { rejected = true; }
+            Assert(rejected && !Directory.EnumerateFileSystemEntries(Path.Combine(root, "tampered")).Any(),
+                "download with the wrong fingerprint is rejected and leaves nothing installed");
+
+            rejected = false;
+            try { await Updater.InstallAsync(update!, null, default, Serve("", exe[..^3]), Path.Combine(root, "short"), desktop); }
+            catch (IOException) { rejected = true; }
+            Assert(rejected && !Directory.EnumerateFileSystemEntries(Path.Combine(root, "short")).Any(), "incomplete download is rejected and removed");
+        }
+        finally { Directory.Delete(root, true); }
+        Assert(Updater.ParseVersion("v1.2") == new Version(1, 2, 0) && Updater.ParseVersion("0.3.2+121fe9e") == new Version(0, 3, 2)
+            && Updater.ParseVersion("latest") is null, "version tags and build metadata parse safely");
+    }
     static async Task<int> Main(string[] args)
     {
         try
@@ -192,6 +257,7 @@ static class Checks
             }
             answer=await HttpCase(200,part,last,16500);
             Assert(answer.Success && answer.OutputText=="first second" && answer.ElapsedSeconds>=16, "healthy stream lasting beyond the old 15-second cutoff finishes successfully");
+            await UpdaterChecks();
             Console.WriteLine($"{count} routing checks passed; zero external provider requests.");
             return 0;
         }

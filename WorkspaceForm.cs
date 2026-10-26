@@ -7,6 +7,11 @@ public sealed class WorkspaceForm : Form
     readonly WorkspaceSettings settings;
     readonly Func<string, string, CancellationToken, Task<CompletionResult>> generate;
     readonly bool skipSetup;
+    readonly Func<CancellationToken, Task<UpdateInfo?>>? updateCheck;
+    readonly Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> updateInstall;
+    readonly Button updateButton = ActionButton("Update available");
+    UpdateInfo? availableUpdate;
+    string? relaunchAfterClose;
     readonly ListBox projects = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = 34 };
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
     readonly Label searchCaption = new() { Text = "Search projects", Dock = DockStyle.Top, Height = 30, Padding = new Padding(0, 4, 0, 0) };
@@ -38,8 +43,12 @@ public sealed class WorkspaceForm : Form
     CancellationTokenSource? cancellation;
 
     public WorkspaceForm(WorkspaceStore? workspace = null, bool skipSetup = false,
-        Func<string, string, CancellationToken, Task<CompletionResult>>? generator = null)
+        Func<string, string, CancellationToken, Task<CompletionResult>>? generator = null,
+        Func<CancellationToken, Task<UpdateInfo?>>? updateCheck = null,
+        Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>>? updateInstall = null)
     {
+        this.updateCheck = updateCheck;
+        this.updateInstall = updateInstall ?? ((update, progress, token) => Updater.InstallAsync(update, progress, token));
         store = workspace ?? new WorkspaceStore();
         settings = store.LoadSettings();
         this.skipSetup = skipSetup;
@@ -123,8 +132,13 @@ public sealed class WorkspaceForm : Form
         setup.Height = 42;
         setup.Click += (_, _) => ShowSetup();
         var local = new Label { Text = "Saved on this computer.", Dock = DockStyle.Bottom, Height = 40, Font = new Font("Segoe UI", 9) };
+        updateButton.Dock = DockStyle.Bottom;
+        updateButton.Height = 42;
+        updateButton.Visible = false;
+        updateButton.Click += async (_, _) => await InstallUpdateAsync();
+        busyDisabled.Add(updateButton);
         search.AccessibleName = "Search projects";
-        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, setup]);
+        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, updateButton, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
@@ -177,6 +191,57 @@ public sealed class WorkspaceForm : Form
             if (last is not null) OpenProject(last);
         }
         UpdatePrivacy();
+        _ = CheckForUpdateAsync();
+    }
+
+    async Task CheckForUpdateAsync()
+    {
+        if (updateCheck is null) return;
+        var update = await updateCheck(CancellationToken.None);
+        if (update is null || IsDisposed) return;
+        availableUpdate = update;
+        updateButton.Text = $"Update to v{update.Version}";
+        updateButton.Visible = true;
+    }
+
+    async Task InstallUpdateAsync()
+    {
+        if (availableUpdate is not { } update || busy) return;
+        string size = update.Size > 0 ? $" ({update.Size / 1048576.0:0.#} MB)" : "";
+        if (MessageBox.Show(this, $"Download RobinTHood v{update.Version}{size} from GitHub and restart? Your work is saved first.",
+                "Update RobinTHood", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+        if (!SaveActive()) return;
+        updateButton.Enabled = false;
+        try
+        {
+            var progress = new Progress<int>(percent => { if (!IsDisposed) status.Text = $"Downloading the update… {percent}%"; });
+            string executable = await updateInstall(update, progress, CancellationToken.None);
+            status.Text = "Update ready. Restarting RobinTHood…";
+            relaunchAfterClose = executable;
+            Close();
+            // A cancelled close (e.g. unsaved document) leaves this copy running; don't start a second one.
+            if (!IsDisposed && Visible)
+            {
+                relaunchAfterClose = null;
+                status.Text = "Update downloaded. Close RobinTHood to finish updating.";
+                updateButton.Enabled = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Update didn't finish: " + ex.Message + " Your current version still works.";
+            updateButton.Enabled = true;
+        }
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        base.OnFormClosed(e);
+        if (relaunchAfterClose is { } executable)
+        {
+            try { Updater.Relaunch(executable); }
+            catch (Exception ex) { MessageBox.Show("The update is installed but couldn't start: " + ex.Message + "\nOpen RobinTHood again to use it.", "Update RobinTHood"); }
+        }
     }
 
     Form CreateSetupDialog()
@@ -192,7 +257,7 @@ public sealed class WorkspaceForm : Form
         var shortcut = new CheckBox { Text = "Put Robin on my desktop (keeps an app copy outside Downloads)", Checked = true, AutoSize = true, MaximumSize = new Size(560, 0) };
         layout.Controls.Add(online);
         layout.Controls.Add(shortcut);
-        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
+        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent, and nothing installs unless you choose Update.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
         var done = ActionButton("Open my workspace");
         done.Click += (_, _) =>
         {

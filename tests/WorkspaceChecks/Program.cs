@@ -249,6 +249,31 @@ static class Checks
                 Call(form, "TryOpenByRequest", "bring back Midnight song");
                 Check(Field<Label>(form, "status").Text.Contains("already open"), "saved project can be found by a plain-language request locally");
             }
+            using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake))
+            {
+                Check(!Field<Button>(form, "updateButton").Visible, "no update button without an update check");
+            }
+            var offered = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", new Uri("https://example.invalid/RobinTHood.exe"), 1, new string('0', 64));
+            using (var form = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
+                       updateInstall: (_, _, _) => throw new IOException("offline test")))
+            {
+                form.StartPosition = FormStartPosition.Manual;
+                form.Location = new Point(-20000, -20000);
+                form.ShowInTaskbar = false;
+                form.Show();
+                for (int i = 0; i < 20 && !Field<Button>(form, "updateButton").Visible; i++) { Application.DoEvents(); Thread.Sleep(10); }
+                var button = Field<Button>(form, "updateButton");
+                Check(button.Visible && button.Text == "Update to v9.9.9", "available update shows a one-click update button with its version");
+                var settingsButton = button.Parent!.Controls.OfType<Button>().Single(b => b.Text == "Settings");
+                Check(button.Height >= 30 && button.Bottom <= settingsButton.Top && button.Top >= 0,
+                    "update button is actually on screen, just above Settings (not collapsed behind the project list)");
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                string updatePreview = Path.Combine(args.Length > 0 ? Path.GetDirectoryName(Path.GetFullPath(args[0]))! : root, "update-available.png");
+                bitmap.Save(updatePreview);
+                Console.WriteLine("PREVIEW " + updatePreview);
+                form.Hide();
+            }
             File.Delete(store.DocumentPath(p));
             Throws<IOException>(() => store.ReadDocument(p), "missing document is reported instead of silently recreated");
             Console.WriteLine($"{count} checks passed; no online providers called.");
