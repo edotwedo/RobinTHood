@@ -18,20 +18,19 @@ public sealed class WorkspaceForm : Form
     bool closeWhenUpdateStops;
     readonly ListBox projects = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = 34 };
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
-    readonly Label searchCaption = new() { Text = "Search projects", Dock = DockStyle.Top, Height = 30, Padding = new Padding(0, 4, 0, 0) };
     readonly TextBox document = Editor("Your document will live here. Write here, or ask Robin for a first draft.");
     readonly TextBox conversation = Editor("Your conversation stays with this project.");
     readonly TextBox suggestion = Editor("Ask Robin for a draft, then save it as your document.");
     readonly TextBox input = Editor("What would you like to make or change?  Ctrl+Enter to send.");
     readonly Label heading = new() { AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold), Text = "Welcome to Robin" };
-    readonly Label saved = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 28, AutoEllipsis = true };
+    readonly Label saved = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 28, AutoEllipsis = true, Visible = false };
     readonly Label status = new() { Dock = DockStyle.Bottom, Height = 32, Padding = new Padding(12, 6, 0, 0), Text = "Start a project, or continue something you love." };
     readonly Label privacy = new() { Dock = DockStyle.Top, Height = 34, Padding = new Padding(0, 8, 0, 0) };
     readonly TabControl tabs = new() { Dock = DockStyle.Fill };
     readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 270 };
     readonly Panel welcome = new() { Dock = DockStyle.Fill, Padding = new Padding(28) };
     readonly FlowLayoutPanel toolbar = new() { Dock = DockStyle.Top, Height = 48, AutoScroll = true };
-    readonly Panel compose = new() { Dock = DockStyle.Bottom, Height = 190, Padding = new Padding(0, 12, 0, 0) };
+    readonly Panel compose = new() { Dock = DockStyle.Bottom, Height = 116, Padding = new Padding(0, 8, 0, 0) };
     readonly Button projectActions = ActionButton("Project options ▾");
     readonly ContextMenuStrip projectMenu = new();
     readonly Button send = ActionButton("Ask Robin");
@@ -163,14 +162,13 @@ public sealed class WorkspaceForm : Form
         setup.Dock = DockStyle.Bottom;
         setup.Height = 42;
         setup.Click += (_, _) => ShowSetup();
-        var local = new Label { Text = "Saved on this computer.", Dock = DockStyle.Bottom, Height = 40, Font = new Font("Segoe UI", 9) };
         updateButton.Dock = DockStyle.Bottom;
         updateButton.Height = 42;
         updateButton.Visible = false;
         updateButton.Click += async (_, _) => await InstallUpdateAsync();
         busyDisabled.Add(updateButton);
         search.AccessibleName = "Search projects";
-        sidebar.Controls.AddRange([projects, search, searchCaption, recentLabel, newProject, tagline, brand, local, updateButton, setup]);
+        sidebar.Controls.AddRange([projects, search, recentLabel, newProject, tagline, brand, updateButton, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
@@ -189,9 +187,11 @@ public sealed class WorkspaceForm : Form
             page.Controls.Add(editor);
             tabs.TabPages.Add(page);
         }
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(0, 8, 0, 0), WrapContents = false, AutoScroll = true };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 44, Padding = new Padding(0, 6, 0, 0), WrapContents = false, AutoScroll = true };
         cancel.Enabled = false;
         actions.Controls.AddRange([mode, send, cancel]);
+        input.Dock = DockStyle.Top;
+        input.Height = 64;
         compose.Controls.Add(input);
         compose.Controls.Add(actions);
         var introduction = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
@@ -352,7 +352,7 @@ public sealed class WorkspaceForm : Form
         try
         {
             var all = store.ListProjects();
-            search.Visible = searchCaption.Visible = all.Count > 0;
+            search.Visible = all.Count > 0;
             projects.Items.Clear();
             foreach (var p in all.Where(p => p.Name.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase))) projects.Items.Add(p);
             for (int i = 0; i < projects.Items.Count; i++) if (((ProjectEntry)projects.Items[i]).Id == active?.Id) projects.SelectedIndex = i;
@@ -416,7 +416,6 @@ public sealed class WorkspaceForm : Form
     void QueueSave()
     {
         if (loading || active is null) return;
-        saved.Text = "Saving on this computer…";
         saveTimer.Stop();
         saveTimer.Start();
     }
@@ -432,7 +431,7 @@ public sealed class WorkspaceForm : Form
             store.Save(active); // Recover edits even if writing the visible document fails.
             if (active.HasDocument && document.Text != DisplayText(expectedDocument))
             {
-                if (conflict) { saved.Text = "Draft saved locally · review and choose Save changes"; return false; }
+                if (conflict) { ShowSaved("Draft saved locally · review and choose Save changes"); return false; }
                 store.SaveDocument(active, document.Text, expectedDocument);
                 expectedDocument = document.Text;
                 active.DocumentDraft = null;
@@ -441,11 +440,17 @@ public sealed class WorkspaceForm : Form
             UpdateSaved();
             return true;
         }
-        catch (Exception ex) { conflict = true; saved.Text = "Document not saved · draft kept locally if possible"; ShowError(ex); return false; }
+        catch (Exception ex) { conflict = true; ShowSaved("Document not saved · draft kept locally if possible"); ShowError(ex); return false; }
         finally { UpdateEnabled(); }
     }
 
-    void UpdateSaved() => saved.Text = active is null ? "" : $"Saved on this computer · {active.Name}" + (active.HasDocument ? " · Document.txt" : " · Project draft");
+    void ShowSaved(string text)
+    {
+        saved.Text = text;
+        saved.Visible = text.Length > 0;
+    }
+
+    void UpdateSaved() => ShowSaved("");
 
     void MakeDocument()
     {
