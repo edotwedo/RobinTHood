@@ -315,15 +315,31 @@ static class Checks
             var realRelaunch = relaunchField.GetValue(null);
             relaunchField.SetValue(null, new Action<string>(relaunched.Add));
             void Pump(Func<bool> until) { for (int i = 0; i < 300 && !until(); i++) { Application.DoEvents(); Thread.Sleep(5); } }
+            // Remember auto-installs in memory so the checks never touch the real install folder.
+            var claimField = typeof(WorkspaceForm).GetField("ClaimAutoApply", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var realClaim = claimField.GetValue(null);
+            var autoInstalled = new HashSet<string>();
+            claimField.SetValue(null, new Func<UpdateInfo, bool>(u => autoInstalled.Add(u.Sha256)));
             int autoInstalls = 0;
-            var auto = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
+            WorkspaceForm AutoForm() => new(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered),
                 updateInstall: (_, _, _) => { autoInstalls++; return Task.FromResult(@"C:\updates\auto.exe"); })
                 { StartPosition = FormStartPosition.Manual, Location = new Point(-20000, -20000), ShowInTaskbar = false };
+            var auto = AutoForm();
             auto.Show();
             Pump(() => auto.IsDisposed);
             Check(autoInstalls == 1 && auto.IsDisposed && relaunched.SequenceEqual([@"C:\updates\auto.exe"]),
                 "a newer release downloads and restarts without asking");
             relaunched.Clear();
+            // Same release offered again (e.g. its program reports an older version than its tag): no restart loop.
+            var again = AutoForm();
+            again.Show();
+            Pump(() => Field<Label>(again, "updateLine").Text.Contains("is ready"));
+            Check(autoInstalls == 1 && !again.IsDisposed && relaunched.Count == 0 && Field<Button>(again, "updateButton").Visible
+                    && Field<Label>(again, "updateLine").Text.Contains("Choose Update"),
+                "a release that was already auto-installed once is not installed again on open (no restart loop)");
+            again.Close();
+            Pump(() => again.IsDisposed);
+            claimField.SetValue(null, realClaim);
             WorkspaceForm UpdateForm(Func<UpdateInfo, IProgress<int>, CancellationToken, Task<string>> install)
             {
                 var f = new WorkspaceForm(store, skipSetup: true, generator: fake, updateCheck: _ => Task.FromResult<UpdateInfo?>(offered), updateInstall: install, applyUpdate: false)

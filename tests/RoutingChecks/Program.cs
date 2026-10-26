@@ -57,6 +57,15 @@ static class Checks
             "rate-limited check reports that it couldn't check, not 'nothing newer'");
         Assert(await Fails(Serve("not json")), "malformed release data reports that it couldn't check");
         Assert(await Fails(new HttpClient(new FakeGitHub(_ => throw new HttpRequestException("offline")))), "offline check reports that it couldn't check");
+        string claimRoot = Path.Combine(Path.GetTempPath(), "robin-claim-check-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var release = new UpdateInfo(new Version(0, 4, 0), "v0.4.0", new Uri("https://example.invalid/RobinTHood.exe"), 1, sha);
+            Assert(Updater.ClaimAutoApply(release, claimRoot) && !Updater.ClaimAutoApply(release, claimRoot)
+                    && Updater.ClaimAutoApply(release with { Sha256 = new string('a', 64) }, claimRoot),
+                "each release (by SHA-256) is auto-installed at most once, and a different build still can be");
+        }
+        finally { if (Directory.Exists(claimRoot)) Directory.Delete(claimRoot, true); }
 
         string root = Path.Combine(Path.GetTempPath(), "robin-update-check-" + Guid.NewGuid().ToString("N"));
         string desktop = Path.Combine(root, "desktop");

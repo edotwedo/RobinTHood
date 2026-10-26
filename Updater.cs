@@ -167,6 +167,23 @@ public static class Updater
         TryReplaceExecutable(self, args[replace + 1]);
     }
 
+    /// <summary>Records that this exact release (by SHA-256) is being installed automatically.
+    /// Returns false if it was already tried once, or if that can't be remembered: the
+    /// Update button still works, but nothing installs itself twice.</summary>
+    public static bool ClaimAutoApply(UpdateInfo update, string? installationRoot = null)
+    {
+        string root = installationRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "RobinTHood");
+        string record = Path.Combine(root, "auto-installed.txt");
+        try
+        {
+            Directory.CreateDirectory(root);
+            if (File.Exists(record) && File.ReadLines(record).Any(line => line.Trim().Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))) return false;
+            File.AppendAllLines(record, [update.Sha256]);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     /// <summary>Copies the new executable over the old one. Never deletes a folder or touches the workspace.</summary>
     public static void TryReplaceExecutable(string source, string target, string? workspaceRoot = null)
     {

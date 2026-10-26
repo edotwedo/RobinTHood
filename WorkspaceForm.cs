@@ -17,6 +17,7 @@ public sealed class WorkspaceForm : Form
     CancellationTokenSource? updateDownload;
     // Replaced only by offline checks, which must never start a real process.
     static Action<string> Relaunch = Updater.Relaunch;
+    static Func<UpdateInfo, bool> ClaimAutoApply = update => Updater.ClaimAutoApply(update);
     bool closeWhenUpdateStops;
     readonly ListBox projects = new() { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, IntegralHeight = false, ItemHeight = 34 };
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
@@ -256,8 +257,14 @@ public sealed class WorkspaceForm : Form
         availableUpdate = update;
         updateButton.Text = $"Update to v{update.Version}";
         updateButton.Visible = true;
-        updateLine.Text = "Downloading v" + update.Version + "…";
-        if (applyUpdate) await RunUpdateAsync(update);
+        // Each release installs itself at most once. Without this, a release whose program reports
+        // an older version than its tag would download and restart on every launch, forever.
+        if (applyUpdate && ClaimAutoApply(update))
+        {
+            updateLine.Text = "Downloading v" + update.Version + "…";
+            await RunUpdateAsync(update);
+        }
+        else updateLine.Text = $"v{update.Version} is ready. Choose Update to install it.";
     }
 
     async Task InstallUpdateAsync()
