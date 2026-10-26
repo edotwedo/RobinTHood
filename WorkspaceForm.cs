@@ -53,7 +53,7 @@ public sealed class WorkspaceForm : Form
         ForeColor = Color.FromArgb(30, 53, 43);
         BuildLayout();
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveActive(); };
-        document.TextChanged += (_, _) => QueueSave();
+        document.TextChanged += (_, _) => { QueueSave(); UpdateEnabled(); };
         input.TextChanged += (_, _) => QueueSave();
         search.TextChanged += (_, _) => RefreshProjects();
         projects.SelectedIndexChanged += (_, _) =>
@@ -319,6 +319,7 @@ public sealed class WorkspaceForm : Form
             return true;
         }
         catch (Exception ex) { conflict = true; saved.Text = "Document not saved · draft kept locally if possible"; ShowError(ex); return false; }
+        finally { UpdateEnabled(); }
     }
 
     void UpdateSaved() => saved.Text = active is null ? "" : $"Saved on this computer · {active.Name}" + (active.HasDocument ? " · Document.txt" : " · Project draft");
@@ -326,7 +327,8 @@ public sealed class WorkspaceForm : Form
     void MakeDocument()
     {
         if (active is null) return;
-        string text = !string.IsNullOrWhiteSpace(suggestion.Text) ? suggestion.Text : document.Text;
+        string text = !active.HasDocument && !string.IsNullOrWhiteSpace(document.Text)
+            ? document.Text : !string.IsNullOrWhiteSpace(suggestion.Text) ? suggestion.Text : document.Text;
         if (string.IsNullOrWhiteSpace(text)) { status.Text = "Write a draft or ask Robin for one first."; return; }
         if (active.HasDocument && MessageBox.Show(this, "Replace your document with the latest answer? The current document will stay in Previous versions.", "Use this answer", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
         try
@@ -444,7 +446,8 @@ public sealed class WorkspaceForm : Form
         welcome.Visible = active is null;
         tabs.Visible = compose.Visible = toolbar.Visible = active is not null;
         cancel.Visible = busy;
-        makeDocument.Visible = active is not null && !string.IsNullOrWhiteSpace(suggestion.Text);
+        makeDocument.Visible = active is not null && (!string.IsNullOrWhiteSpace(suggestion.Text)
+            || !active.HasDocument && !string.IsNullOrWhiteSpace(document.Text));
         saveChanges.Visible = conflict;
         makeDocument.Enabled = !busy && active is not null;
         saveChanges.Enabled = !busy && active is not null;

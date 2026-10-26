@@ -78,8 +78,9 @@ unverified checks. A bounded live run on 2026-10-25 produced 64 answers from 67
 root requests using 73 HTTP attempts, with three safety cancellations. It stopped
 at the first rate limit; this does not establish sustained or unlimited capacity.
 
-2026-10-26 interface verification: 29 workspace checks pass, including a real
-empty state, automatic route selection, persistence and interruption safety.
+2026-10-26 interface verification: 31 workspace checks pass, including a real
+empty state, saving a handwritten first draft without AI, automatic route
+selection, persistence and interruption safety.
 Workspace, empty-state and setup renders were inspected. Lightweight single-worker
 compilation passes without warnings; no local model or live provider was used.
 

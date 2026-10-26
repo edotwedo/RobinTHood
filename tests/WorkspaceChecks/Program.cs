@@ -45,6 +45,13 @@ static class Checks
                 string emptyPreview = args.Length > 0 ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "empty-workspace.png") : Path.Combine(root, "empty-workspace.png");
                 preview.Save(emptyPreview);
                 Console.WriteLine("PREVIEW " + emptyPreview);
+                var manualStore = Field<WorkspaceStore>(empty, "store");
+                var manualProject = manualStore.Create("My handwritten draft", "Story & writing");
+                Call(empty, "OpenProject", manualProject);
+                Field<TextBox>(empty, "document").Text = "A draft I wrote myself";
+                Check(Field<Button>(empty, "makeDocument").Visible, "handwritten first draft exposes Save draft without requiring an AI answer");
+                Call(empty, "MakeDocument");
+                Check(manualStore.ReadDocument(manualProject) == "A draft I wrote myself", "handwritten first draft becomes the persistent document without inference");
                 empty.Close();
             }
             var store = new WorkspaceStore(root);
