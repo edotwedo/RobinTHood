@@ -85,21 +85,31 @@ public static class KeylessClient
         total.CancelAfter(TimeSpan.FromSeconds(90));
         var operation = total.Token;
         var endpoint = Resolve(modelId);
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint.Url);
-        request.Headers.TryAddWithoutValidation("User-Agent", "RobinTHood/0.2");
-        request.Content = new StringContent(Frame(endpoint.Model, prompt), Encoding.UTF8, "application/json");
+        HttpResponseMessage response = null!;
+        for (var attempt = 0; ; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint.Url);
+            request.Content = new StringContent(Frame(endpoint.Model, prompt), Encoding.UTF8, "application/json");
+            try
+            {
+                using var connect = CancellationTokenSource.CreateLinkedTokenSource(operation);
+                connect.CancelAfter(TimeSpan.FromSeconds(15));
+                response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connect.Token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                throw new HttpRequestException($"Connect to {endpoint.Id} failed: {ex.Message}");
+            }
 
-        HttpResponseMessage response;
-        try
-        {
-            using var connect = CancellationTokenSource.CreateLinkedTokenSource(operation);
-            connect.CancelAfter(TimeSpan.FromSeconds(15));
-            response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connect.Token);
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
-        {
-            throw new HttpRequestException($"Connect to {endpoint.Id} failed: {ex.Message}");
+            // One wait, then one more try. A 502/503 here is usually a gateway blip,
+            // and failing it immediately parks the provider in a long cooldown.
+            if (response.IsSuccessStatusCode || attempt > 0
+                || (response.StatusCode != System.Net.HttpStatusCode.BadGateway
+                    && response.StatusCode != System.Net.HttpStatusCode.ServiceUnavailable))
+                break;
+            response.Dispose();
+            await Task.Delay(TimeSpan.FromMilliseconds(1200), operation);
         }
 
         using (response)
@@ -136,11 +146,13 @@ public static class KeylessClient
             await using var stream = await response.Content.ReadAsStreamAsync(operation);
             using var reader = new StreamReader(stream);
             bool inThink = false;
+            bool seenText = false;
             var idle = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
                 using var read = CancellationTokenSource.CreateLinkedTokenSource(operation);
-                double left = 30 - idle.Elapsed.TotalSeconds;
+                double budget = seenText ? 30 : 45;
+                double left = budget - idle.Elapsed.TotalSeconds;
                 if (left <= 0) throw new TimeoutException("The free service stopped producing text.");
                 read.CancelAfter(TimeSpan.FromSeconds(left));
                 var line = await reader.ReadLineAsync(read.Token);
@@ -186,6 +198,7 @@ public static class KeylessClient
                 if (!TryDelta(line, out var text)) continue;
                 if (text.Length == 0) continue;
                 idle.Restart();
+                seenText = true;
 
                 // Filter out any reasoning/thinking tokens (<think>...</think>)
                 if (inThink)
@@ -290,6 +303,7 @@ public static class KeylessClient
     {
         var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("RobinTHood-Desktop/0.2 (Windows)");
         return client;
     }
 
