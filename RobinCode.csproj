@@ -8,10 +8,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.1.0</Version>
+    <Version>0.3.0</Version>
     <AssemblyName>RobinTHood</AssemblyName>
     <RootNamespace>RobinTHood</RootNamespace>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
 
 </Project>

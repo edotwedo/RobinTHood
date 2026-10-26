@@ -80,6 +80,7 @@ public static class KeylessClient
         {
             response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
         }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             throw new HttpRequestException($"Connect to {endpoint.Id} failed: {ex.Message}");

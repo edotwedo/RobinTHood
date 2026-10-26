@@ -75,6 +75,7 @@ public static class FreeAggregator
             string[] cascadeOrder = ["kilo", "ovh-120b", "ovh-qwen", "kilo-cohere"];
             foreach (var target in cascadeOrder)
             {
+                cancel.ThrowIfCancellationRequested();
                 try
                 {
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
@@ -87,6 +88,7 @@ public static class FreeAggregator
                     }
                     failures.Add($"{target}: {directRes.ErrorMessage}");
                 }
+                catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     failures.Add($"{target}: {ex.GetType().Name} {ex.Message}");
@@ -101,10 +103,12 @@ public static class FreeAggregator
                 if (directRes.Success) return directRes;
                 failures.Add($"{modelId}: {directRes.ErrorMessage}");
             }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
             catch (Exception ex) { failures.Add($"{modelId}: {ex.Message}"); }
         }
 
         // 2. Mega Zword CLI Fallover Router (Groq, Cloudflare, Gemini, Nvidia)
+        cancel.ThrowIfCancellationRequested();
         string megazwordExe = Path.Combine(AppContext.BaseDirectory, "megazword.exe");
         if (!File.Exists(megazwordExe))
         {
@@ -142,13 +146,17 @@ public static class FreeAggregator
             {
                 using var proc = new Process { StartInfo = psi };
                 proc.Start();
+                using var stopProcess = cancel.Register(() => { try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch { } });
 
                 var outTask = proc.StandardOutput.ReadToEndAsync();
                 var errTask = proc.StandardError.ReadToEndAsync();
 
-                if (await Task.WhenAny(Task.WhenAll(outTask, errTask), Task.Delay(20000, cancel)) == Task.Delay(20000, cancel))
+                var deadline = Task.Delay(20000, cancel);
+                if (await Task.WhenAny(Task.WhenAll(outTask, errTask), deadline) == deadline)
                 {
-                    try { proc.Kill(); } catch { }
+                    try { proc.Kill(entireProcessTree: true); } catch { }
+                    cancel.ThrowIfCancellationRequested();
+                    failures.Add("megazword: timed out after 20 seconds");
                 }
                 else
                 {
@@ -174,6 +182,7 @@ public static class FreeAggregator
                     failures.Add($"megazword: exit {proc.ExitCode}: {rawErr.Trim()}");
                 }
             }
+            catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
             catch (Exception ex) { failures.Add($"megazword: {ex.Message}"); }
         }
 

@@ -8,7 +8,7 @@ static class Program
         try
         {
             ApplicationConfiguration.Initialize();
-            Application.Run(new RobinForm());
+            Application.Run(new WorkspaceForm());
         }
         catch (Exception ex)
         {
