@@ -78,7 +78,8 @@ public static class FreeAggregator
         {
             cancel.ThrowIfCancellationRequested();
             var result = await run(deadline.Token);
-            deadline.Token.ThrowIfCancellationRequested();
+            cancel.ThrowIfCancellationRequested();
+            if (!result.Success) deadline.Token.ThrowIfCancellationRequested();
             return result;
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested && deadline.IsCancellationRequested)

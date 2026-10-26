@@ -61,6 +61,12 @@ static class Checks
             }
             var timely = await FreeAggregator.WithDeadlineAsync(token => Task.FromResult(Good("chosen", "saved answer")), default, TimeSpan.FromSeconds(1));
             Assert(timely.Success && timely.OutputText == "saved answer" && timely.ModelUsed == "chosen", "answer completed inside total budget is preserved");
+            var finished = await FreeAggregator.WithDeadlineAsync(async token =>
+            {
+                while (!token.IsCancellationRequested) await Task.Delay(5);
+                return Good("finished", "complete answer");
+            }, default, TimeSpan.FromMilliseconds(30));
+            Assert(finished.Success && finished.OutputText == "complete answer", "complete answer wins a simultaneous deadline notification");
             DateTimeOffset now = DateTimeOffset.Parse("2026-10-26T06:00:00Z");
             var routes = new[] { E("a", "one.test"), E("a2", "one.test"), E("b", "two.test") };
             var sent = new List<string>();
