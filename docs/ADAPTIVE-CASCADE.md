@@ -74,9 +74,13 @@ Primary sources:
 
 Auto mode buffers each candidate answer until completion, including in the
 classic window. Text can therefore remain blank while a provider works for up
-to 90 seconds. Five sequential native routes can take up to 7.5 minutes before
-optional CLI fallback; there is currently no overall cascade deadline. Cancel
-remains available. Buffering prevents a failed partial answer from being saved.
+to 90 seconds per candidate. Auto now has one two-minute deadline across queue
+waits, native routes and optional CLI fallback. Exhausting that budget cancels
+the active request or CLI process and stops further attempts. Robin reports that
+the request is still saved; the user can retry or select an installed local model.
+User cancellation remains distinct from a timeout. Buffering prevents a failed
+partial answer from being saved. Explicit model choices retain their existing
+individual time limits.
 
 SSE error codes/types `rate_limit_exceeded`, `rate_limit_error` and
 `too_many_requests` are treated as provider-wide 429 refusals, just like numeric
