@@ -24,6 +24,8 @@ public static class KeylessClient
         new("ovh-120b", "gpt-oss-120b", Ovh),
         new("ovh-qwen", "Qwen3.8-27B", Ovh),
         new("kilo-cohere", "cohere/north-mini-code:free", Kilo),
+        new("kilo-lightning", "nvidia/nemotron-3.5-lightning:free", Kilo),
+        new("kilo-laguna", "poolside/laguna-xs-2.1:free", Kilo),
         new("kilo-nemotron", "nvidia/nemotron-3-super-120b-a12b:free", Kilo),
         new("ovh", "Qwen3.5-397B-A17B", Ovh),
     ];
@@ -58,6 +60,15 @@ public static class KeylessClient
                 return new CompletionResult(false, modelId, "", seconds, "Empty response from endpoint.");
             return new CompletionResult(true, modelId, text, seconds);
         }
+        catch (ProviderFailure ex)
+        {
+            return new(false, modelId, "", (Environment.TickCount64 - started) / 1000.0, ex.Message,
+                (int?)ex.StatusCode, ex.RetryAfterUtc, RateLimitIsProviderWide: ex.ProviderWide);
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+        {
+            return new(false, modelId, "", (Environment.TickCount64 - started) / 1000.0, "The free service stopped making progress or took too long.");
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             var seconds = (Environment.TickCount64 - started) / 1000.0;
@@ -70,6 +81,9 @@ public static class KeylessClient
         string modelId = "kilo",
         [EnumeratorCancellation] CancellationToken cancel = default)
     {
+        using var total = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        total.CancelAfter(TimeSpan.FromSeconds(90));
+        var operation = total.Token;
         var endpoint = Resolve(modelId);
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint.Url);
         request.Headers.TryAddWithoutValidation("User-Agent", "RobinTHood/0.2");
@@ -78,9 +92,11 @@ public static class KeylessClient
         HttpResponseMessage response;
         try
         {
-            response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancel);
+            using var connect = CancellationTokenSource.CreateLinkedTokenSource(operation);
+            connect.CancelAfter(TimeSpan.FromSeconds(15));
+            response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connect.Token);
         }
-        catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             throw new HttpRequestException($"Connect to {endpoint.Id} failed: {ex.Message}");
@@ -90,7 +106,7 @@ public static class KeylessClient
         {
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(cancel);
+                var body = await response.Content.ReadAsStringAsync(operation);
                 int code = (int)response.StatusCode;
                 string hint = code switch
                 {
@@ -99,18 +115,60 @@ public static class KeylessClient
                     >= 500 => "provider error",
                     _ => "request rejected",
                 };
-                throw new HttpRequestException($"HTTP {code} from {endpoint.Id} - {hint}: {Trim(body)}");
+                DateTimeOffset? retry = response.Headers.RetryAfter?.Date;
+                if (response.Headers.RetryAfter?.Delta is { } delta) retry = DateTimeOffset.UtcNow + delta;
+                // Only a specific structured upstream-model refusal is model-scoped.
+                // Unknown 429s stay provider-wide; don't evade a shared IP quota by
+                // cycling through model names at the same gateway.
+                bool providerWide = true;
+                using (var errorFrame = ParseFrame(body))
+                {
+                    if (code == 429 && errorFrame is not null && errorFrame.RootElement.ValueKind == JsonValueKind.Object && errorFrame.RootElement.TryGetProperty("error", out var error)
+                        && error.ValueKind == JsonValueKind.Object && error.TryGetProperty("metadata", out var metadata)
+                        && metadata.ValueKind == JsonValueKind.Object && metadata.TryGetProperty("raw", out var raw)
+                        && raw.ValueKind == JsonValueKind.String && raw.GetString() is { } detail
+                        && detail.Contains(endpoint.Model, StringComparison.Ordinal)
+                        && detail.Contains("temporarily rate-limited upstream", StringComparison.OrdinalIgnoreCase)) providerWide = false;
+                }
+                throw new ProviderFailure($"HTTP {code} from {endpoint.Id} - {hint}: {Trim(body)}", response.StatusCode, retry, providerWide);
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(cancel);
+            await using var stream = await response.Content.ReadAsStreamAsync(operation);
             using var reader = new StreamReader(stream);
             bool inThink = false;
+            var idle = System.Diagnostics.Stopwatch.StartNew();
             while (true)
             {
-                var line = await reader.ReadLineAsync(cancel);
-                if (line is null) yield break;
+                using var read = CancellationTokenSource.CreateLinkedTokenSource(operation);
+                double left = 30 - idle.Elapsed.TotalSeconds;
+                if (left <= 0) throw new TimeoutException("The free service stopped producing text.");
+                read.CancelAfter(TimeSpan.FromSeconds(left));
+                var line = await reader.ReadLineAsync(read.Token);
+                if (line is null) throw new IOException("The free service closed the response before confirming it was complete.");
+                if (line.Trim().Equals("data: [DONE]", StringComparison.Ordinal)) yield break;
+                bool finished = false;
+                if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string data = line[5..].Trim();
+                    if (data.Length == 0) continue;
+                    using var frame = ParseFrame(data);
+                    if (frame is null) throw new IOException("The free service sent an invalid answer frame.");
+                    if (frame is not null && frame.RootElement.TryGetProperty("error", out var error))
+                    {
+                        int code = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var value) && int.TryParse(value.ToString(), out var parsed) ? parsed : 502;
+                        throw new ProviderFailure("The free service reported an error during its answer.", (System.Net.HttpStatusCode)code, null);
+                    }
+                    if (frame is not null && frame.RootElement.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0 && choices[0].TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String)
+                    {
+                        string? why = reason.GetString();
+                        if (why is "length" or "error" or "content_filter") throw new IOException("The free service cut the answer short (" + why + ").");
+                        finished = why is "stop" or "end_turn";
+                    }
+                }
+                if (finished && !TryDelta(line, out _)) yield break;
                 if (!TryDelta(line, out var text)) continue;
                 if (text.Length == 0) continue;
+                idle.Restart();
 
                 // Filter out any reasoning/thinking tokens (<think>...</think>)
                 if (inThink)
@@ -146,6 +204,7 @@ public static class KeylessClient
                 }
 
                 yield return text;
+                if (finished) yield break;
             }
         }
     }
@@ -212,9 +271,22 @@ public static class KeylessClient
 
     static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
+        var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         return client;
+    }
+
+    static JsonDocument? ParseFrame(string text)
+    {
+        try { return JsonDocument.Parse(text); }
+        catch (JsonException) { return null; }
+    }
+
+    sealed class ProviderFailure(string message, System.Net.HttpStatusCode status, DateTimeOffset? retry, bool providerWide = true)
+        : HttpRequestException(message, null, status)
+    {
+        public DateTimeOffset? RetryAfterUtc { get; } = retry;
+        public bool ProviderWide { get; } = providerWide;
     }
 
     static string Trim(string body)

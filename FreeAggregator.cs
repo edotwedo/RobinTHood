@@ -10,11 +10,18 @@ public record CompletionResult(
     string ModelUsed,
     string OutputText,
     double ElapsedSeconds,
-    string ErrorMessage = ""
+    string ErrorMessage = "",
+    int? HttpStatus = null,
+    DateTimeOffset? RetryAfterUtc = null,
+    string Diagnostics = "",
+    bool RateLimitIsProviderWide = true
 );
 
 public static class FreeAggregator
 {
+    public static readonly string[] CascadeOrder = ["kilo", "ovh-120b", "ovh-qwen", "kilo-cohere", "kilo-lightning"];
+    static readonly AdaptiveCascade Cascade = new(CascadeOrder.Select(KeylessClient.Resolve).ToArray(),
+        (prompt, id, token) => KeylessClient.CompleteAsync(prompt, id, null, token));
     public static readonly List<FreeModelInfo> BaseModels =
     [
         new("auto", "⚡ Auto-Cascade (Fastest $0)", "Multi-Engine", "<1.0s", true),
@@ -53,10 +60,12 @@ public static class FreeAggregator
         RunPromptStreamAsync(prompt, modelId, null);
 
     public static async Task<CompletionResult> RunPromptStreamAsync(
-        string prompt, string modelId = "auto", Action<string>? onChunk = null, CancellationToken cancel = default)
+        string prompt, string modelId = "auto", Action<string>? onChunk = null, CancellationToken cancel = default,
+        Action<string>? onStatus = null)
     {
         var sw = Stopwatch.StartNew();
         var failures = new List<string>();
+        CompletionResult? cascadeFailure = null;
 
         // 0. Local Ollama Execution (Air-Gapped & Offline)
         if (modelId.StartsWith("ollama:"))
@@ -69,39 +78,20 @@ public static class FreeAggregator
         }
 
         // 1. Direct Native Keyless Execution (Fastest & Zero Runtime Dependencies)
-        // Auto tries Kilo first (fastest, <1s), then falls over to OVH
+        // The native router shares quota/health state across automatic requests.
         if (modelId == "auto")
         {
-            string[] cascadeOrder = ["kilo", "ovh-120b", "ovh-qwen", "kilo-cohere"];
-            foreach (var target in cascadeOrder)
-            {
-                cancel.ThrowIfCancellationRequested();
-                try
-                {
-                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-                    cts.CancelAfter(TimeSpan.FromSeconds(15)); // Fast 15s per-engine boundary
-
-                    var directRes = await KeylessClient.CompleteAsync(prompt, target, onChunk, cts.Token);
-                    if (directRes.Success && !string.IsNullOrWhiteSpace(directRes.OutputText))
-                    {
-                        return directRes with { ModelUsed = $"Auto ({target})" };
-                    }
-                    failures.Add($"{target}: {directRes.ErrorMessage}");
-                }
-                catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
-                catch (Exception ex)
-                {
-                    failures.Add($"{target}: {ex.GetType().Name} {ex.Message}");
-                }
-            }
+            var result = await Cascade.RunAsync(prompt, cancel, onStatus);
+            if (result.Success) { onChunk?.Invoke(result.OutputText); return result; }
+            cascadeFailure = result;
+            failures.Add(result.Diagnostics);
         }
-        else if (modelId.StartsWith("ovh") || modelId.StartsWith("kilo"))
+        else if (KeylessClient.Endpoints.Any(e => e.Id == modelId))
         {
             try
             {
                 var directRes = await KeylessClient.CompleteAsync(prompt, modelId, onChunk, cancel);
-                if (directRes.Success) return directRes;
-                failures.Add($"{modelId}: {directRes.ErrorMessage}");
+                return directRes;
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
             catch (Exception ex) { failures.Add($"{modelId}: {ex.Message}"); }
@@ -117,30 +107,12 @@ public static class FreeAggregator
 
         if (File.Exists(megazwordExe))
         {
-            var psi = new ProcessStartInfo
+            // Explicit independent providers only. CLI auto-routing could circle
+            // back to a Kilo/OVH service currently in cooldown in this process.
+            foreach (string cliTarget in CliFallbackTargets(modelId))
             {
-                FileName = megazwordExe,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-                StandardErrorEncoding = System.Text.Encoding.UTF8
-            };
-
-            if (modelId == "auto")
-            {
-                psi.ArgumentList.Add("run");
-                psi.ArgumentList.Add("--free-only");
-                psi.ArgumentList.Add(prompt);
-            }
-            else
-            {
-                psi.ArgumentList.Add("run");
-                psi.ArgumentList.Add("-m");
-                psi.ArgumentList.Add(modelId);
-                psi.ArgumentList.Add(prompt);
-            }
+            cancel.ThrowIfCancellationRequested();
+            var psi = CliStartInfo(megazwordExe, prompt, cliTarget);
 
             try
             {
@@ -164,7 +136,7 @@ public static class FreeAggregator
                     string rawOut = await outTask;
                     string rawErr = await errTask;
 
-                    string detectedModel = modelId;
+                    string detectedModel = cliTarget;
                     var match = Regex.Match(rawErr + "\n" + rawOut, @"using\s+([\w\-]+)");
                     if (match.Success) detectedModel = match.Groups[1].Value;
 
@@ -184,12 +156,29 @@ public static class FreeAggregator
             }
             catch (OperationCanceledException) when (cancel.IsCancellationRequested) { throw; }
             catch (Exception ex) { failures.Add($"megazword: {ex.Message}"); }
+            }
         }
 
         sw.Stop();
+        if (cascadeFailure is not null) return cascadeFailure with { ElapsedSeconds = sw.Elapsed.TotalSeconds, Diagnostics = string.Join(" | ", failures) };
         string detail = failures.Count == 0
             ? "All free tiers momentarily busy. Please try again in 5s."
             : $"All free tiers busy ({failures.Count} tried): {string.Join(" | ", failures.Take(4))}";
         return new CompletionResult(false, "offline", "", sw.Elapsed.TotalSeconds, detail);
+    }
+
+    internal static string[] CliFallbackTargets(string modelId) => modelId == "auto"
+        ? ["groq", "cloudflare", "gemini-api", "nvidia-lightning"] : [modelId];
+
+    internal static ProcessStartInfo CliStartInfo(string executable, string prompt, string target)
+    {
+        var info = new ProcessStartInfo
+        {
+            FileName = executable, RedirectStandardOutput = true, RedirectStandardError = true,
+            UseShellExecute = false, CreateNoWindow = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8, StandardErrorEncoding = System.Text.Encoding.UTF8
+        };
+        foreach (string arg in new[] { "run", "--free-only", "-m", target, prompt }) info.ArgumentList.Add(arg);
+        return info;
     }
 }
