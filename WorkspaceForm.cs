@@ -466,7 +466,9 @@ public sealed class WorkspaceForm : Form
 
     void UpdatePrivacy()
     {
-        privacy.Text = "Saved automatically. Ready when you return.";
+        privacy.Text = settings.OnlineAllowed
+            ? "Saved on this computer · Ask Robin sends your request and document online"
+            : "Saved on this computer · Writing assistance is off";
     }
 
     void RenderConversation() => conversation.Text = active is null ? "" : string.Join("\r\n\r\n", active.Conversation.Select(t => $"{t.Role} · {t.At.LocalDateTime:g}\r\n{t.Text}"));
