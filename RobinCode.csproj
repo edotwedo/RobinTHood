@@ -8,7 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>0.3.2</Version>
+    <Version>0.3.3</Version>
     <AssemblyName>RobinTHood</AssemblyName>
     <RootNamespace>RobinTHood</RootNamespace>
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
