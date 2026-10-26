@@ -85,7 +85,7 @@ public static class FreeAggregator
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested && deadline.IsCancellationRequested)
         {
             return new(false, "auto", "", watch.Elapsed.TotalSeconds,
-                "Free assistance took too long. Your request is still saved; please try again or choose an installed local model.");
+                "Robin took too long to respond. Your request is still saved; please try again.");
         }
     }
 

@@ -11,7 +11,7 @@ public sealed class WorkspaceForm : Form
     readonly TextBox search = new() { Dock = DockStyle.Top, PlaceholderText = "Find a project by name…" };
     readonly TextBox document = Editor("Your document will live here. Write here, or ask Robin for a first draft.");
     readonly TextBox conversation = Editor("Your conversation stays with this project.");
-    readonly TextBox suggestion = Editor("Ask Robin for a draft, then choose Make this a document.");
+    readonly TextBox suggestion = Editor("Ask Robin for a draft, then save it as your document.");
     readonly TextBox input = Editor("What would you like to make or change?  Ctrl+Enter to send.");
     readonly Label heading = new() { AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold), Text = "Welcome to Robin" };
     readonly Label saved = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 28, AutoEllipsis = true };
@@ -19,9 +19,13 @@ public sealed class WorkspaceForm : Form
     readonly Label privacy = new() { Dock = DockStyle.Top, Height = 34, Padding = new Padding(0, 8, 0, 0) };
     readonly TabControl tabs = new() { Dock = DockStyle.Fill };
     readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
-    readonly ComboBox engine = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240, DisplayMember = "Name" };
+    readonly Panel welcome = new() { Dock = DockStyle.Fill, Padding = new Padding(28) };
+    readonly FlowLayoutPanel toolbar = new() { Dock = DockStyle.Top, Height = 48, AutoScroll = true };
+    readonly Panel compose = new() { Dock = DockStyle.Bottom, Height = 190, Padding = new Padding(0, 12, 0, 0) };
+    readonly Button projectActions = ActionButton("Project options ▾");
+    readonly ContextMenuStrip projectMenu = new();
     readonly Button send = ActionButton("Ask Robin");
-    readonly Button makeDocument = ActionButton("Make this a document");
+    readonly Button makeDocument = ActionButton("Save draft as document");
     readonly Button saveChanges = ActionButton("Save changes");
     readonly Button cancel = ActionButton("Stop");
     readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 650 };
@@ -77,9 +81,6 @@ public sealed class WorkspaceForm : Form
         };
         mode.Items.AddRange(["Talk it through", "Update my document"]);
         mode.SelectedIndex = 0;
-        engine.SelectedIndexChanged += (_, _) => UpdatePrivacy();
-        engine.Items.Add(new FreeModelInfo("auto", "Free online assistance", "", "", true));
-        engine.SelectedIndex = 0;
         RefreshProjects();
         UpdateEnabled();
     }
@@ -108,7 +109,7 @@ public sealed class WorkspaceForm : Form
     void BuildLayout()
     {
         var sidebar = new Panel { Dock = DockStyle.Left, Width = 250, Padding = new Padding(16), BackColor = Color.FromArgb(229, 237, 226) };
-        var brand = new Label { Text = "RobinTHood", Dock = DockStyle.Top, Height = 48, Font = new Font("Segoe UI", 20, FontStyle.Bold) };
+        var brand = new Label { Text = "RobinTHood", Dock = DockStyle.Top, Height = 48, Font = new Font("Segoe UI", 16, FontStyle.Bold) };
         var tagline = new Label { Text = "A place for your ideas", Dock = DockStyle.Top, Height = 32 };
         var newProject = ActionButton("+ New project");
         newProject.Dock = DockStyle.Top;
@@ -116,26 +117,22 @@ public sealed class WorkspaceForm : Form
         newProject.Click += (_, _) => NewProject();
         busyDisabled.Add(newProject);
         var recentLabel = new Label { Text = "YOUR PROJECTS", Dock = DockStyle.Top, Height = 38, Padding = new Padding(0, 16, 0, 0), Font = new Font("Segoe UI", 9, FontStyle.Bold) };
-        var setup = ActionButton("Setup & desktop shortcut");
+        var setup = ActionButton("Settings");
         setup.Dock = DockStyle.Bottom;
         setup.Height = 42;
         setup.Click += (_, _) => ShowSetup();
-        var local = new Label { Text = "Projects stay on this computer.\nNo Robin account or cloud sync.", Dock = DockStyle.Bottom, Height = 56, Font = new Font("Segoe UI", 9) };
+        var local = new Label { Text = "Saved on this computer.", Dock = DockStyle.Bottom, Height = 40, Font = new Font("Segoe UI", 9) };
         sidebar.Controls.AddRange([projects, search, recentLabel, newProject, tagline, brand, local, setup]);
         var main = new Panel { Dock = DockStyle.Fill, Padding = new Padding(22, 16, 22, 8) };
         var header = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false };
         header.Controls.Add(heading);
-        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 90, AutoScroll = true };
-        var rename = ActionButton("Rename");
-        rename.Click += (_, _) => RenameProject();
-        var folder = ActionButton("Open project folder");
-        folder.Click += (_, _) => Safe(() => DesktopSetup.OpenFolder(active is null ? store.Root : store.ProjectFolder(active)));
-        var export = ActionButton("Export a copy…");
-        export.Click += (_, _) => Export();
-        var versions = ActionButton("Previous versions");
-        versions.Click += (_, _) => ShowVersions();
-        toolbar.Controls.AddRange([makeDocument, saveChanges, versions, rename, folder, export]);
-        busyDisabled.AddRange([rename, versions, export]);
+        projectMenu.Items.Add("Previous versions", null, (_, _) => ShowVersions());
+        projectMenu.Items.Add("Rename project", null, (_, _) => RenameProject());
+        projectMenu.Items.Add("Open project folder", null, (_, _) => Safe(() => DesktopSetup.OpenFolder(active is null ? store.Root : store.ProjectFolder(active))));
+        projectMenu.Items.Add("Export a copy…", null, (_, _) => Export());
+        projectActions.Click += (_, _) => projectMenu.Show(projectActions, new Point(0, projectActions.Height));
+        toolbar.Controls.AddRange([makeDocument, saveChanges, projectActions]);
+        busyDisabled.Add(projectActions);
         conversation.ReadOnly = true;
         suggestion.ReadOnly = true;
         foreach (var (name, editor) in new[] { ("Your document", document), ("Conversation", conversation), ("Latest answer", suggestion) })
@@ -144,12 +141,19 @@ public sealed class WorkspaceForm : Form
             page.Controls.Add(editor);
             tabs.TabPages.Add(page);
         }
-        var compose = new Panel { Dock = DockStyle.Bottom, Height = 190, Padding = new Padding(0, 12, 0, 0) };
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(0, 8, 0, 0), WrapContents = false, AutoScroll = true };
         cancel.Enabled = false;
-        actions.Controls.AddRange([mode, engine, send, cancel]);
+        actions.Controls.AddRange([mode, send, cancel]);
         compose.Controls.Add(input);
         compose.Controls.Add(actions);
+        var introduction = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        introduction.Controls.Add(new Label { Text = "What would you like to create?", AutoSize = true, Font = new Font("Segoe UI", 20, FontStyle.Bold), Margin = new Padding(0, 24, 0, 16) });
+        introduction.Controls.Add(new Label { Text = "A song. A story. A new idea.\n\nStart a project and Robin will keep your drafts,\nconversation and revisions together for next time.", AutoSize = true, Margin = new Padding(0, 0, 0, 24) });
+        var startProject = ActionButton("Start a project");
+        startProject.Click += (_, _) => NewProject();
+        introduction.Controls.Add(startProject);
+        welcome.Controls.Add(introduction);
+        main.Controls.Add(welcome);
         main.Controls.Add(tabs);
         main.Controls.Add(compose);
         main.Controls.Add(saved);
@@ -161,7 +165,7 @@ public sealed class WorkspaceForm : Form
         Controls.Add(status);
     }
 
-    protected override async void OnShown(EventArgs e)
+    protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
         if (!skipSetup && !settings.SetupComplete && !ShowSetup()) { Close(); return; }
@@ -170,15 +174,7 @@ public sealed class WorkspaceForm : Form
             var last = store.ListProjects().FirstOrDefault(p => p.Id == settings.LastProjectId);
             if (last is not null) OpenProject(last);
         }
-        try
-        {
-            var models = await OllamaClient.GetInstalledModelsAsync();
-            if (IsDisposed || Disposing) return;
-            foreach (var model in models) engine.Items.Add(new FreeModelInfo("ollama:" + model, "On this computer: " + model, "", "", true));
-            if (!settings.OnlineAllowed && models.Count > 0) engine.SelectedIndex = 1;
-            UpdatePrivacy();
-        }
-        catch (Exception ex) { status.Text = "Couldn't check local assistance: " + ex.Message; }
+        UpdatePrivacy();
     }
 
     Form CreateSetupDialog()
@@ -190,11 +186,11 @@ public sealed class WorkspaceForm : Form
         layout.Controls.Add(new Label { Text = "Your ideas, ready when you are.", AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold) });
         layout.Controls.Add(new Label { Text = "Robin keeps your projects, conversations and documents together on this computer. No account. No cloud sync.\n\nLyrics, stories and art briefs are text documents; Robin doesn't create audio or image files yet.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 18, 0, 12) });
         layout.Controls.Add(new Label { Text = "Your workspace:\n" + store.Root + "\nYou can open its folder from any project.", AutoSize = true, MaximumSize = new Size(570, 0) });
-        var online = new CheckBox { Text = "Allow free online assistance", Checked = settings.OnlineAllowed, AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(0, 16, 0, 10) };
+        var online = new CheckBox { Text = "Enable Robin's writing assistance", Checked = settings.OnlineAllowed, AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(0, 16, 0, 10) };
         var shortcut = new CheckBox { Text = "Put Robin on my desktop (keeps an app copy outside Downloads)", Checked = true, AutoSize = true, MaximumSize = new Size(560, 0) };
         layout.Controls.Add(online);
         layout.Controls.Add(shortcut);
-        layout.Controls.Add(new Label { Text = "Online assistance sends this project's document, recent conversation and request to a provider. Leave it off for local-only work. Local AI help requires an installed Ollama model; writing and reopening projects always work offline.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
+        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
         var done = ActionButton("Open my workspace");
         done.Click += (_, _) =>
         {
@@ -357,15 +353,13 @@ public sealed class WorkspaceForm : Form
         if (!SaveActive()) return;
         string instruction = input.Text.Trim();
         if (TryOpenByRequest(instruction)) return;
-        var selected = (FreeModelInfo)engine.SelectedItem!;
-        bool local = selected.Id.StartsWith("ollama:", StringComparison.Ordinal);
-        if (!local && !settings.OnlineAllowed)
+        if (!settings.OnlineAllowed)
         {
-            status.Text = "Online assistance is off. Choose an installed local model, or enable online assistance in Setup.";
+            status.Text = "Turn on Robin's writing assistance in Settings to get a response. You can keep writing here.";
             return;
         }
         bool update = mode.SelectedIndex == 1;
-        if (update && !active.HasDocument) { status.Text = "Choose Make this a document first, or switch to Talk it through."; return; }
+        if (update && !active.HasDocument) { status.Text = "Save a draft as your document first, or switch to Talk it through."; return; }
         string prompt;
         try { prompt = ProjectContext.Build(active, document.Text, instruction, update); }
         catch (Exception ex) { ShowError(ex); return; }
@@ -380,7 +374,7 @@ public sealed class WorkspaceForm : Form
             project.Conversation.Add(new("You", instruction, DateTimeOffset.Now));
             store.Save(project);
             RenderConversation();
-            var result = await generate(prompt, selected.Id, cancellation.Token);
+            var result = await generate(prompt, "auto", cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (!result.Success || string.IsNullOrWhiteSpace(result.OutputText)) throw new InvalidOperationException(string.IsNullOrWhiteSpace(result.ErrorMessage) ? "Robin didn't return an answer. Try again." : result.ErrorMessage);
             string answer = DisplayText(result.OutputText);
@@ -403,7 +397,7 @@ public sealed class WorkspaceForm : Form
             project.Draft = "";
             store.Save(project);
             UpdateSaved();
-            status.Text = update ? "Document updated · the earlier version is in Previous versions." : "Answer saved with your project. Like it? Choose Make this a document.";
+            status.Text = update ? "Document updated · the earlier version is in Project options → Previous versions." : "Draft kept with your project. Like it? Choose Save draft as document.";
         }
         catch (OperationCanceledException) { status.Text = "Stopped. Your document is unchanged; your request is still here."; }
         catch (Exception ex) { ShowError(ex); }
@@ -446,16 +440,20 @@ public sealed class WorkspaceForm : Form
         document.ReadOnly = busy || active is null;
         send.Enabled = !busy && active is not null;
         cancel.Enabled = busy;
-        mode.Enabled = engine.Enabled = !busy;
+        mode.Enabled = !busy;
+        welcome.Visible = active is null;
+        tabs.Visible = compose.Visible = toolbar.Visible = active is not null;
+        cancel.Visible = busy;
+        makeDocument.Visible = active is not null && !string.IsNullOrWhiteSpace(suggestion.Text);
+        saveChanges.Visible = conflict;
         makeDocument.Enabled = !busy && active is not null;
         saveChanges.Enabled = !busy && active is not null;
-        makeDocument.Text = active?.HasDocument == true ? "Use latest answer as document" : "Make this a document";
+        makeDocument.Text = active?.HasDocument == true ? "Replace with latest draft" : "Save draft as document";
     }
 
     void UpdatePrivacy()
     {
-        bool local = engine.SelectedItem is FreeModelInfo m && m.Id.StartsWith("ollama:", StringComparison.Ordinal);
-        privacy.Text = local ? "On this computer · AI requests stay local" : settings.OnlineAllowed ? "Saved locally · Online assistance sends this project's text to a free provider" : "Local workspace · Online assistance is off";
+        privacy.Text = "Saved automatically. Ready when you return.";
     }
 
     void RenderConversation() => conversation.Text = active is null ? "" : string.Join("\r\n\r\n", active.Conversation.Select(t => $"{t.Role} · {t.At.LocalDateTime:g}\r\n{t.Text}"));
@@ -532,7 +530,7 @@ public sealed class WorkspaceForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { saveTimer.Dispose(); cancellation?.Dispose(); projectLock?.Dispose(); }
+        if (disposing) { saveTimer.Dispose(); cancellation?.Dispose(); projectLock?.Dispose(); projectMenu.Dispose(); }
         base.Dispose(disposing);
     }
 }

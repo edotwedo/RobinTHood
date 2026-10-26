@@ -31,6 +31,22 @@ static class Checks
         try
         {
             ApplicationConfiguration.Initialize();
+            using (var empty = new WorkspaceForm(new WorkspaceStore(Path.Combine(root, "empty")), skipSetup: true, generator: (_, _, _) => throw new Exception("Empty workspace must not generate")))
+            {
+                empty.StartPosition = FormStartPosition.Manual;
+                empty.Location = new Point(-20000, -20000);
+                empty.ShowInTaskbar = false;
+                empty.Show();
+                Application.DoEvents();
+                Check(Field<Panel>(empty, "welcome").Visible && !Field<TabControl>(empty, "tabs").Visible && !Field<Button>(empty, "send").Visible,
+                    "empty workspace offers a project start instead of inactive editors and routing controls");
+                using var preview = new Bitmap(empty.Width, empty.Height);
+                empty.DrawToBitmap(preview, new Rectangle(Point.Empty, empty.Size));
+                string emptyPreview = args.Length > 0 ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "empty-workspace.png") : Path.Combine(root, "empty-workspace.png");
+                preview.Save(emptyPreview);
+                Console.WriteLine("PREVIEW " + emptyPreview);
+                empty.Close();
+            }
             var store = new WorkspaceStore(root);
             var p = store.Create("Midnight song", "Song & lyrics");
             store.SaveDocument(p, "Verse one\nChorus one", "");
@@ -78,6 +94,7 @@ static class Checks
             bool waitForCancel = false;
             Func<string, string, CancellationToken, Task<CompletionResult>> fake = (text, model, token) =>
             {
+                if (model != "auto") throw new Exception("Workspace must select assistance automatically");
                 generations++;
                 if (waitForCancel) return WaitForCancellation(token);
                 if (fail) return Task.FromResult(new CompletionResult(false, "offline-test", "", 0, "Provider unavailable"));
@@ -92,9 +109,7 @@ static class Checks
                 input.Text = "Rewrite the chorus";
                 ((Task)Call(form, "SendAsync")!).GetAwaiter().GetResult();
                 Check(generations == 0, "local-only setting blocks online generation before any call");
-                var engine = Field<ComboBox>(form, "engine");
-                engine.Items.Add(new FreeModelInfo("ollama:test", "Offline test", "", "", true));
-                engine.SelectedIndex = 1;
+                Field<WorkspaceSettings>(form, "settings").OnlineAllowed = true;
                 ((Task)Call(form, "SendAsync")!).GetAwaiter().GetResult();
                 Check(generations == 1 && editor.Text.ReplaceLineEndings("\n") == "Verse one\nA hopeful chorus", "successful revision updates the same document through actual UI flow");
                 Check(store.ReadDocument(p) == editor.Text && store.Versions(p).Count == 2, "AI revision is persisted and previous external edit retained");
@@ -133,6 +148,7 @@ static class Checks
                 bitmap.Save(screenshot);
                 Console.WriteLine("PREVIEW " + screenshot);
                 form.Hide();
+                Field<WorkspaceSettings>(form, "settings").OnlineAllowed = false;
                 using var setupForm = (Form)Call(form, "CreateSetupDialog")!;
                 setupForm.StartPosition = FormStartPosition.Manual;
                 setupForm.Location = new Point(-20000, -20000);
@@ -140,7 +156,7 @@ static class Checks
                 setupForm.Show();
                 Application.DoEvents();
                 var setupControls = setupForm.Controls[0].Controls.Cast<Control>().ToList();
-                var online = setupControls.OfType<CheckBox>().First(c => c.Text.StartsWith("Allow free"));
+                var online = setupControls.OfType<CheckBox>().First(c => c.Text.StartsWith("Enable Robin"));
                 Check(!online.Checked, "onboarding leaves online assistance off by default");
                 using var setupBitmap = new Bitmap(setupForm.Width, setupForm.Height);
                 setupForm.DrawToBitmap(setupBitmap, new Rectangle(Point.Empty, setupForm.Size));
