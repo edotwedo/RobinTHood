@@ -194,6 +194,15 @@ static class Checks
                 Check(TextRenderer.MeasureText(intent.Text, intent.Font).Width + SystemInformation.VerticalScrollBarWidth <= intent.ClientSize.Width,
                     "document-update choice fits without clipping at the current display scale");
                 Check(editor.Lines.Length == 3, "Unix line endings from AI remain visible as separate lines in Windows editor");
+                var talk = Field<TextBox>(form, "conversation");
+                Field<TabControl>(form, "tabs").SelectedIndex = 1;
+                Application.DoEvents();
+                talk.Text = string.Join("\r\n", Enumerable.Range(0, 80).Select(i => $"Turn {i}: a line of the conversation that has to remain readable."));
+                Application.DoEvents();
+                talk.SelectionStart = talk.TextLength;
+                talk.ScrollToCaret();
+                Application.DoEvents();
+                Check(talk.GetPositionFromCharIndex(0).Y < 0, "conversation scrolls so later messages can be read");
                 var privacyLine = Field<Label>(form, "privacy");
                 var formSettings = Field<WorkspaceSettings>(form, "settings");
                 bool wasOnline = formSettings.OnlineAllowed;

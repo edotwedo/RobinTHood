@@ -104,7 +104,35 @@ public sealed class WorkspaceForm : Form
     sealed class DocumentEditor : TextBox
     {
         [System.Diagnostics.CodeAnalysis.AllowNull]
-        public override string Text { get => base.Text; set => base.Text = DisplayText(value ?? ""); }
+        public override string Text
+        {
+            get => base.Text;
+            set
+            {
+                base.Text = DisplayText(value ?? "");
+                // The scrollbar is calculated while the box is still 0px tall, then never
+                // comes back. Toggling it after the text arrives makes the rest readable.
+                if (!IsHandleCreated || !Multiline || ScrollBars == ScrollBars.None) return;
+                var bars = ScrollBars;
+                ScrollBars = ScrollBars.None;
+                ScrollBars = bars;
+            }
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (!IsHandleCreated || !Multiline || ScrollBars == ScrollBars.None)
+            {
+                base.OnMouseWheel(e);
+                return;
+            }
+            int lines = SystemInformation.MouseWheelScrollLines;
+            if (lines < 0) lines = 3;
+            SendMessage(Handle, 0x00B6, IntPtr.Zero, (IntPtr)(e.Delta < 0 ? lines : -lines));
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
     }
 
     static TextBox Editor(string placeholder) => new DocumentEditor()
@@ -565,7 +593,14 @@ public sealed class WorkspaceForm : Form
             : "Saved on this computer · Writing assistance is off";
     }
 
-    void RenderConversation() => conversation.Text = active is null ? "" : string.Join("\r\n\r\n", active.Conversation.Select(t => $"{t.Role} · {t.At.LocalDateTime:g}\r\n{t.Text}"));
+    void RenderConversation()
+    {
+        conversation.Text = active is null ? "" : string.Join("\r\n\r\n", active.Conversation.Select(t => $"{t.Role} · {t.At.LocalDateTime:g}\r\n{t.Text}"));
+        if (conversation.TextLength == 0) return;
+        conversation.SelectionStart = conversation.TextLength;
+        conversation.SelectionLength = 0;
+        conversation.ScrollToCaret();
+    }
 
     void RenameProject()
     {
