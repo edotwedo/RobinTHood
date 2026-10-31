@@ -1,0 +1,29 @@
+# RobinTHood for Android
+
+Expo (SDK 54) app. Free keyless AI chat with a model picker.
+
+Rebuilt Oct 31, 2026 from the installed v0.2.1 APK, because the original Android source only ever lived on Phil's old Windows PC.
+
+## What changed from v0.2.1
+
+- The full conversation is sent with every message. v0.2.1 sent only the latest message, so it forgot everything.
+- A real model picker. Tap the model name under the title. The default is GPT-OSS 120B. "Kilo Auto" lets Kilo choose the model, so it comes last in the Auto order.
+- The text box stays above the keyboard.
+- The header sits below the Android status bar.
+- Chats and settings are saved on the phone. **New** starts a fresh chat.
+- The system prompt tells the model to answer directly and skip unrequested lectures.
+
+The Pro / Google Play purchase from v0.2.1 is not included; it was never live in the Play Store.
+
+## Build
+
+GitHub Actions (`.github/workflows/android-apk.yml`) builds a release APK on every push that touches `android-app/`. It publishes the APK to the `android-latest` prerelease:
+
+https://github.com/edotwedo/robinthood/releases/download/android-latest/RobinTHood.apk
+
+The APK is signed with the standard React Native debug key. That means builds install over each other, but not over v0.2.1: uninstall v0.2.1 once first.
+
+## Code
+
+- `App.js`: screens (chat, model picker, settings).
+- `engines.js`: model list, cascade, streaming, and history building.

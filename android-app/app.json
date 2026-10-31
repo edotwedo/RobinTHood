@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "RobinTHood",
+    "slug": "robinthood",
+    "version": "0.4.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0f19",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b0f19"
+    },
+    "android": {
+      "package": "com.edotwedo.robinthood",
+      "versionCode": 5,
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0b0f19"
+      },
+      "permissions": ["INTERNET"]
+    },
+    "plugins": []
+  }
+}
