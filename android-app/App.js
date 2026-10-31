@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, FlatList, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView, KeyboardProvider } from 'react-native-keyboard-controller';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { availableModels, complete, labelFor } from './engines';
+import { formatForModel, searchQueryFrom, webSearch } from './web';
 
 const KEYS = {
   settings: '@robinthood_settings_v2',
@@ -15,6 +16,7 @@ const KEYS = {
 
 const DEFAULT_SETTINGS = {
   selectedModel: 'ovh-120b',
+  webSearch: true,
   ollamaUrl: '',
   ollamaModel: '',
   openRouterKey: '',
@@ -25,7 +27,7 @@ const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models.',
+  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet for current info.',
   model: 'RobinTHood',
 };
 
@@ -93,9 +95,24 @@ function Chat() {
     const update = (patch) => setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, ...patch } : m)));
 
     try {
+      let webContext;
+      let sources;
+      if (settings.webSearch) {
+        setStatus('Searching the web…');
+        try {
+          const web = await webSearch(searchQueryFrom(history));
+          webContext = formatForModel(web);
+          sources = web.results.map((r) => ({ title: r.title, url: r.url }));
+          update({ sources });
+        } catch (e) {
+          update({ note: `Web search failed (${e.message}); answering without it.` });
+        }
+        if (ctrl.signal.aborted) throw new Error('Stopped');
+      }
       const result = await complete({
         history,
         settings,
+        webContext,
         signal: ctrl.signal,
         onChunk: (partial, engineId) => {
           setStatus(`Asking ${labelFor(engineId, settings)}…`);
@@ -148,6 +165,15 @@ function Chat() {
             <Text style={styles.loadingText}>{status || 'Thinking…'}</Text>
           </View>
         )}
+        {item.sources?.length ? (
+          <View style={styles.sources}>
+            {item.sources.map((src, i) => (
+              <Text key={src.url} style={styles.source} numberOfLines={1} onPress={() => Linking.openURL(src.url)}>
+                [{i + 1}] {src.title}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
       </View>
     );
@@ -165,6 +191,13 @@ function Chat() {
             <Text style={styles.modelChip} numberOfLines={1}>{labelFor(settings.selectedModel, settings)} ▾</Text>
           </Pressable>
         </View>
+        <Pressable
+          onPress={() => setSettings((s) => ({ ...s, webSearch: !s.webSearch }))}
+          style={[styles.headerBtn, settings.webSearch && styles.webOn]}
+          hitSlop={8}
+        >
+          <Text style={[styles.headerBtnText, settings.webSearch && { color: '#fff' }]}>🌐 Web</Text>
+        </Pressable>
         <Pressable onPress={newChat} style={styles.headerBtn} hitSlop={8}>
           <Text style={styles.headerBtnText}>New</Text>
         </Pressable>
@@ -241,7 +274,7 @@ function Chat() {
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))} />
               <Field label="OpenRouter model" value={settings.openRouterModel} placeholder="openrouter/free"
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))} />
-              <Text style={styles.hint}>RobinTHood Android 0.4.0. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.5.0. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
@@ -297,6 +330,9 @@ const styles = StyleSheet.create({
   modelTag: { fontSize: 10, fontWeight: '700', color: C.green, textTransform: 'uppercase' },
   latency: { fontSize: 10, color: C.faint, marginLeft: 6 },
   msgText: { color: C.text, fontSize: 15, lineHeight: 22 },
+  webOn: { backgroundColor: '#065f46' },
+  sources: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
+  source: { color: '#60a5fa', fontSize: 12, marginTop: 3 },
   note: { color: C.faint, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   loadingText: { color: C.dim, fontSize: 12, marginLeft: 8 },

@@ -29,7 +29,7 @@ export const SYSTEM_PROMPT =
 // Keep the request a sensible size: newest turns first, up to a character budget.
 const HISTORY_CHAR_BUDGET = 24000;
 
-export function buildMessages(history) {
+export function buildMessages(history, webContext) {
   const turns = history
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.error && !m.intro)
     .map((m) => ({ role: m.role, content: m.content }));
@@ -42,7 +42,11 @@ export function buildMessages(history) {
   }
   // Conversations must start with a user turn for some providers.
   while (kept.length && kept[0].role !== 'user') kept.shift();
-  return [{ role: 'system', content: SYSTEM_PROMPT }, ...kept];
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  // One system message: some providers reject more than one.
+  let system = `${SYSTEM_PROMPT} Today is ${today}.`;
+  if (webContext) system += `\n\n${webContext}`;
+  return [{ role: 'system', content: system }, ...kept];
 }
 
 function stripThink(text) {
@@ -93,7 +97,7 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, signal, fi
       method: 'POST',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'RobinTHood-Android/0.4',
+        'User-Agent': 'RobinTHood-Android/0.5',
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
         ...headers,
@@ -182,8 +186,8 @@ export function labelFor(id, settings) {
 }
 
 // Try the chosen model; if it fails, fall through the rest of the cascade.
-export async function complete({ history, settings, onChunk, signal }) {
-  const messages = buildMessages(history);
+export async function complete({ history, settings, onChunk, signal, webContext }) {
+  const messages = buildMessages(history, webContext);
   const chosen = settings.selectedModel || 'auto';
   const cascade = [];
   if (chosen !== 'auto') cascade.push(chosen);

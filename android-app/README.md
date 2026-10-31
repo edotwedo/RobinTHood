@@ -12,6 +12,7 @@ Rebuilt Oct 31, 2026 from the installed v0.2.1 APK, because the original Android
 - The header sits below the Android status bar.
 - Chats and settings are saved on the phone. **New** starts a fresh chat.
 - The system prompt tells the model to answer directly and skip unrequested lectures.
+- **0.5.0: web search.** With 🌐 Web on (the default), each message is searched on DuckDuckGo, with Wikipedia as backup. The top results, plus text from the top two pages, go to the model, and the sources show as tappable links under the answer. No key or account needed. The model is also told today's date.
 
 The Pro / Google Play purchase from v0.2.1 is not included; it was never live in the Play Store.
 
@@ -27,3 +28,4 @@ The APK is signed with the standard React Native debug key. That means builds in
 
 - `App.js`: screens (chat, model picker, settings).
 - `engines.js`: model list, cascade, streaming, and history building.
+- `web.js`: keyless web search and page-text extraction.
