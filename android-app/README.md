@@ -16,6 +16,9 @@ Rebuilt Oct 31, 2026 from the installed v0.2.1 APK, because the original Android
 
 The Pro / Google Play purchase from v0.2.1 is not included; it was never live in the Play Store.
 
+- **0.6.0: background music.** An original chiptune loop (`assets/theme.m4a`, made by `music/compose.py`) plays while the app is open and stops when you leave it. The ♪ button turns it on or off; Settings has Quiet/Normal/Loud. It mixes with other audio.
+- The Play bundle (`.aab`) is built too. Privacy policy: https://edotwedo.github.io/RobinTHood/privacy-android.html
+
 ## Build
 
 GitHub Actions (`.github/workflows/android-apk.yml`) builds a release APK on every push that touches `android-app/`. It publishes the APK to the `android-latest` prerelease:

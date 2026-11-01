@@ -97,7 +97,7 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, signal, fi
       method: 'POST',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'RobinTHood-Android/0.5',
+        'User-Agent': 'RobinTHood-Android/0.6',
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
         ...headers,

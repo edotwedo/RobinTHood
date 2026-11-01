@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView, KeyboardProvider } from 'react-native-keyboard-controller';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { availableModels, complete, labelFor } from './engines';
 import { formatForModel, searchQueryFrom, webSearch } from './web';
 
@@ -17,6 +18,8 @@ const KEYS = {
 const DEFAULT_SETTINGS = {
   selectedModel: 'ovh-120b',
   webSearch: true,
+  music: true,
+  musicVolume: 0.3,
   ollamaUrl: '',
   ollamaModel: '',
   openRouterKey: '',
@@ -27,7 +30,7 @@ const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet for current info.',
+  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet for current info. ♪ turns the music on or off.',
   model: 'RobinTHood',
 };
 
@@ -50,6 +53,21 @@ function Chat() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const listRef = useRef(null);
+  const theme = useAudioPlayer(require('./assets/theme.m4a'));
+
+  // Background theme: loops while the app is open, mixes with other audio,
+  // stops when the app goes to the background.
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: false, shouldPlayInBackground: false, interruptionMode: 'mixWithOthers' }).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!loaded || !theme) return;
+    try {
+      theme.loop = true;
+      theme.volume = settings.musicVolume;
+      if (settings.music) theme.play(); else theme.pause();
+    } catch {}
+  }, [theme, loaded, settings.music, settings.musicVolume]);
   const abortRef = useRef(null);
 
   // Load saved settings and conversation.
@@ -198,6 +216,13 @@ function Chat() {
         >
           <Text style={[styles.headerBtnText, settings.webSearch && { color: '#fff' }]}>🌐 Web</Text>
         </Pressable>
+        <Pressable
+          onPress={() => setSettings((s) => ({ ...s, music: !s.music }))}
+          style={[styles.headerBtn, settings.music && styles.webOn]}
+          hitSlop={8}
+        >
+          <Text style={[styles.headerBtnText, settings.music && { color: '#fff' }]}>{settings.music ? '♪' : '♪̸'}</Text>
+        </Pressable>
         <Pressable onPress={newChat} style={styles.headerBtn} hitSlop={8}>
           <Text style={styles.headerBtnText}>New</Text>
         </Pressable>
@@ -274,7 +299,16 @@ function Chat() {
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))} />
               <Field label="OpenRouter model" value={settings.openRouterModel} placeholder="openrouter/free"
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))} />
-              <Text style={styles.hint}>RobinTHood Android 0.5.0. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.fieldLabel}>Music volume</Text>
+              <View style={styles.pillRow}>
+                {[['Quiet', 0.15], ['Normal', 0.3], ['Loud', 0.6]].map(([name, v]) => (
+                  <Pressable key={name} style={[styles.pill, settings.musicVolume === v && styles.optionActive]}
+                    onPress={() => setSettings((s) => ({ ...s, musicVolume: v, music: true }))}>
+                    <Text style={[styles.optionText, settings.musicVolume === v && { color: '#fff', fontWeight: '700' }]}>{name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.hint}>RobinTHood Android 0.6.0. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
@@ -331,6 +365,8 @@ const styles = StyleSheet.create({
   latency: { fontSize: 10, color: C.faint, marginLeft: 6 },
   msgText: { color: C.text, fontSize: 15, lineHeight: 22 },
   webOn: { backgroundColor: '#065f46' },
+  pillRow: { flexDirection: 'row', gap: 8 },
+  pill: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, backgroundColor: C.panel2 },
   sources: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
   source: { color: '#60a5fa', fontSize: 12, marginTop: 3 },
   note: { color: C.faint, fontSize: 11, marginTop: 8, fontStyle: 'italic' },

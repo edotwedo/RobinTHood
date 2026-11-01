@@ -46,16 +46,37 @@ jobs:
         working-directory: android-app/android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
 
-      - name: Collect APK
+      - name: Build Play bundle (all architectures)
+        working-directory: android-app/android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Collect APK and bundle
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/RobinTHood.apk
-          sha256sum dist/RobinTHood.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab dist/RobinTHood-unsigned.aab
+          sha256sum dist/*
+
+      # Sign the Play bundle with the upload key, when the key is stored in repo secrets
+      # (PLAY_UPLOAD_KEYSTORE_B64 and PLAY_UPLOAD_KEY_PASSWORD). Without them, the bundle
+      # is published unsigned-for-Play and must be signed by hand with the upload key.
+      - name: Sign Play bundle
+        env:
+          KEYSTORE_B64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_B64 }}
+          KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "No upload key in secrets; leaving bundle unsigned."; exit 0; fi
+          echo "$KEYSTORE_B64" | base64 -d > upload.jks
+          cp dist/RobinTHood-unsigned.aab dist/RobinTHood-play.aab
+          zip -q -d dist/RobinTHood-play.aab 'META-INF/*'
+          jarsigner -sigalg SHA256withRSA -digestalg SHA-256 -keystore upload.jks \
+            -storepass "$KEY_PASSWORD" -keypass "$KEY_PASSWORD" dist/RobinTHood-play.aab upload
+          rm upload.jks dist/RobinTHood-unsigned.aab
 
       - uses: actions/upload-artifact@v4
         with:
           name: RobinTHood-android
-          path: android-app/dist/RobinTHood.apk
+          path: android-app/dist/*
 
       # Fixed tag so the phone download link never changes. Marked prerelease so the
       # Windows app's /releases/latest update check never picks it up.
@@ -64,8 +85,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete android-latest --yes --cleanup-tag || true
-          gh release create android-latest dist/RobinTHood.apk \
+          gh release create android-latest dist/* \
             --prerelease \
             --target "${{ github.sha }}" \
             --title "RobinTHood Android (latest build)" \
-            --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Download RobinTHood.apk on your phone and open it to install."
+            --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Phone install: RobinTHood.apk. Play Console upload: the .aab bundle."

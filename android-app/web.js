@@ -60,7 +60,7 @@ async function searchDuckDuckGo(query) {
 async function searchWikipedia(query) {
   const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=' + encodeURIComponent(query);
   const json = await withTimeout(async (signal) => {
-    const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.5' } });
+    const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.6' } });
     if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
     return res.json();
   }, 8000);
