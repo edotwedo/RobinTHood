@@ -1,8 +1,9 @@
 // RobinTHood Web Search & Page Extraction Client
-// Connects to the hardened Cloudflare edge worker with automatic circuit-breaker
-// and tiered fallback (DuckDuckGo Lite, Wikipedia).
+// Connects to the hardened Cloudflare edge worker with automatic circuit-breaker.
+// Search falls back to DuckDuckGo Lite and Wikipedia; page reading has no phone-side fallback.
 import { fetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
+import { isUnsafeUrl } from './urlsafety';
 
 const UA = 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
 const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
@@ -152,57 +153,33 @@ async function searchWikipedia(query, lang = 'en') {
   }));
 }
 
-// Pull readable text from a page, best effort.
+// Pull readable text from a page, best effort. Pages are read only through the search
+// worker, never fetched from the phone: the phone sits on the user's home network, and a
+// page the model chose (perhaps told to by another page) could point it at the router or
+// any device there. A refused or failed read returns '' and the model tries another result.
 export async function pageText(url, maxChars = 2500) {
   const cleanUrl = sanitizeWebUrl(url);
-  if (!cleanUrl) return '';
-
-  // 1. Try dedicated edge worker extraction first (authenticated POST, strips tracking/scripts on edge)
-  if (isWorkerAvailable()) {
-    try {
-      const payload = JSON.stringify({ url: cleanUrl, maxChars });
-      const headers = await makeAuthHeaders(payload);
-      const json = await withTimeout(async (signal) => {
-        const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
-          method: 'POST',
-          headers,
-          body: payload,
-          signal,
-        });
-        if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
-        return res.json();
-      }, 4000);
-      if (json?.ok && json.text) {
-        return json.text.slice(0, maxChars);
-      }
-    } catch {
-      tripWorkerCircuit(60000);
-    }
-  }
-
-  // 2. Direct client fetch fallback
+  if (!cleanUrl || isUnsafeUrl(cleanUrl)) return '';
+  if (!isWorkerAvailable()) return '';
   try {
-    const html = await withTimeout(async (signal) => {
-      const res = await fetch(cleanUrl, { signal, headers: { 'User-Agent': UA, Accept: 'text/html' } });
-      if (!res.ok) throw new Error('bad status');
-      const type = res.headers.get('content-type') || '';
-      if (!type.includes('html') && !type.includes('text')) throw new Error('not text');
-      return (await res.text()).slice(0, 200000);
+    const payload = JSON.stringify({ url: cleanUrl, maxChars });
+    const headers = await makeAuthHeaders(payload);
+    const json = await withTimeout(async (signal) => {
+      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal,
+      });
+      // A 4xx is the worker refusing this one page (restricted or unreadable URL), not the
+      // worker being down, so it must not trip the circuit for every read after it.
+      if (res.status >= 400 && res.status < 500) return null;
+      if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
+      return res.json();
     }, 4000);
-
-    // Filter bot challenges
-    if (html.includes('cf-browser-verification') || html.includes('Just a moment...') || html.includes('captcha-delivery')) {
-      return '';
-    }
-
-    let body = html
-      .replace(/<(script|style|noscript|svg|nav|header|footer|form|aside)[\s\S]*?<\/\1>/gi, ' ')
-      .replace(/<!--[\s\S]*?-->/g, ' ');
-    const main = body.match(/<(article|main)[\s\S]*?<\/\1>/i);
-    if (main) body = main[0];
-    const text = stripTags(body);
-    return text.length > 40 ? text.slice(0, maxChars) : '';
+    return json?.ok && json.text ? json.text.slice(0, maxChars) : '';
   } catch {
+    tripWorkerCircuit(60000);
     return '';
   }
 }
