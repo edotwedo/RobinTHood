@@ -5,12 +5,12 @@ const { withProjectBuildGradle } = require('@expo/config-plugins');
 
 const withAdMobCompatibility = (cfg) => {
   return withProjectBuildGradle(cfg, (modConfig) => {
-    if (!modConfig.modResults.contents.includes('play-services-ads:23.6.0')) {
+    if (!modConfig.modResults.contents.includes('-Xskip-metadata-version-check')) {
       modConfig.modResults.contents += `
 allprojects {
-  configurations.all {
-    resolutionStrategy {
-      force "com.google.android.gms:play-services-ads:23.6.0"
+  tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+      freeCompilerArgs += ["-Xskip-metadata-version-check"]
     }
   }
 }
