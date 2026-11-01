@@ -115,7 +115,10 @@ async function nonceAlreadyUsed(env, nonce) {
 }
 
 // HMAC-SHA256 over "ts:nonce:body", 120s window, each nonce accepted once.
-async function verifyAppSignature(request, rawBody, secret, env) {
+// Order matters: HMAC, then the per-IP limit, then the nonce claim, so neither forged
+// traffic nor a holder of the extracted app key can call the nonce store more than
+// SIGNED_LIMIT_PER_MIN times a minute per IP.
+async function verifyAppSignature(request, rawBody, secret, env, ip) {
   if (!secret) {
     return { ok: false, status: 503, error: 'Service not configured' };
   }
@@ -144,6 +147,10 @@ async function verifyAppSignature(request, rawBody, secret, env) {
   const expectedSig = await hmacHex(secret, `${ts}:${nonce}:${rawBody}`);
   if (!timingSafeEqual(sigHeader, expectedSig)) {
     return { ok: false, status: 403, error: 'Forbidden: Invalid app signature' };
+  }
+
+  if (await signedRequestLimited(env, ip)) {
+    return { ok: false, limited: true };
   }
 
   if (await nonceAlreadyUsed(env, nonce)) {
@@ -372,14 +379,14 @@ export default {
         }
 
         const rawBody = await request.text();
-        const auth = await verifyAppSignature(request, rawBody, clientSecret, env);
+        const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
+        if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
           return new Response(JSON.stringify({ error: auth.error }), {
             status: auth.status,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
         }
-        if (await signedRequestLimited(env, clientIp)) return rateLimitResponse();
 
         let parsed;
         try {
@@ -480,14 +487,14 @@ export default {
         }
 
         const rawBody = await request.text();
-        const auth = await verifyAppSignature(request, rawBody, clientSecret, env);
+        const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
+        if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
           return new Response(JSON.stringify({ error: auth.error }), {
             status: auth.status,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
         }
-        if (await signedRequestLimited(env, clientIp)) return rateLimitResponse();
 
         let parsed;
         try {
@@ -552,7 +559,8 @@ export default {
   },
 };
 
-// One shard of the nonce store (256 shards, keyed by the nonce's first two characters).
+// One shard of the nonce store, keyed by the nonce's first two characters (lowercased):
+// 256 shards for the app's hex UUID nonces, up to 37^2 for other allowed characters.
 // A Durable Object handles one request at a time, so check-then-record is atomic, and
 // every Cloudflare location reaches the same object, which closes cross-location replay.
 export class NonceStore {
