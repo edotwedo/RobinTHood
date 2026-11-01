@@ -3,29 +3,55 @@
 // Search falls back to DuckDuckGo Lite and Wikipedia; page reading has no phone-side fallback.
 import { fetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
+import Constants from 'expo-constants';
 import { isUnsafeUrl } from './urlsafety';
 
 const UA = 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
 const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
-const CLIENT_SECRET = 'rth_live_sec_9f82a17cb6e4402eb06a287955c4df01';
+// Injected at build time from the ROBIN_CLIENT_SECRET env var (app.config.js), never
+// committed. It still ships inside the APK, so it is a speed bump, not real attestation.
+const CLIENT_SECRET = Constants.expoConfig?.extra?.robinSecret || '';
 
 // Edge worker circuit breaker (trips on timeout or 5xx to protect mobile UX)
 let workerFailedUntil = 0;
 function isWorkerAvailable() {
-  return Date.now() > workerFailedUntil;
+  return Boolean(CLIENT_SECRET) && Date.now() > workerFailedUntil;
 }
 function tripWorkerCircuit(durationMs = 60000) {
   workerFailedUntil = Date.now() + durationMs;
 }
 
-// Generate HMAC-SHA256 timestamped signature for edge worker
+const utf8 = (s) => new TextEncoder().encode(s);
+const hex = (buf) => Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async (bytes) => new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes));
+
+// HMAC-SHA256 (RFC 2104) on top of expo-crypto's digest, which has no HMAC of its own.
+async function hmacSha256Hex(key, message) {
+  let k = utf8(key);
+  if (k.length > 64) k = await sha256(k);
+  const pad = (byte) => {
+    const out = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) out[i] = (k[i] || 0) ^ byte;
+    return out;
+  };
+  const msg = utf8(message);
+  const inner = new Uint8Array(64 + msg.length);
+  inner.set(pad(0x36)); inner.set(msg, 64);
+  const innerHash = await sha256(inner);
+  const outer = new Uint8Array(64 + innerHash.length);
+  outer.set(pad(0x5c)); outer.set(innerHash, 64);
+  return hex(await sha256(outer));
+}
+
+// Timestamped HMAC signature plus a one-time nonce for the edge worker
 async function makeAuthHeaders(payloadString) {
   const ts = Math.floor(Date.now() / 1000).toString();
-  const toHash = `${ts}:${payloadString}:${CLIENT_SECRET}`;
-  const sig = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, toHash);
+  const nonce = Crypto.randomUUID();
+  const sig = await hmacSha256Hex(CLIENT_SECRET, `${ts}:${nonce}:${payloadString}`);
   return {
     'Content-Type': 'application/json',
     'X-Robin-Timestamp': ts,
+    'X-Robin-Nonce': nonce,
     'X-Robin-Signature': sig,
   };
 }

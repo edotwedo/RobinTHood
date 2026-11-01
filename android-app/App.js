@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -225,6 +225,23 @@ function Chat() {
             settingsRef.current = { ...settingsRef.current, filesUri: uri };
             return uri;
           },
+          // After Robin has read the web, a page could be steering it; the user approves each risky step.
+          confirm: (action) => new Promise((resolve) => {
+            const lang = settings.lang;
+            const detail = action.kind === 'OPEN' ? action.arg
+              : action.kind === 'LIST' ? (action.arg || t('confirmYourFiles', lang))
+              : action.arg;
+            setStatus(t('confirmWaiting', lang));
+            Alert.alert(
+              t(`confirm${action.kind}`, lang),
+              `${detail}\n\n${t('confirmWhy', lang)}`,
+              [
+                { text: t('confirmDeny', lang), style: 'cancel', onPress: () => resolve(false) },
+                { text: t('confirmAllow', lang), onPress: () => resolve(true) },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          }),
         },
         onEvent: (ev) => {
           if (ev.type === 'text') { setStatus(`Asking ${ev.model}…`); update({ content: ev.text, model: ev.model }); }

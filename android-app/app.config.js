@@ -22,12 +22,14 @@ allprojects {
 
 module.exports = ({ config }) => {
   const personal = process.env.ROBIN_ALL_FILES === '1';
+  // Search worker signing key, from CI secrets. Without it the app skips the worker.
+  const robinSecret = process.env.ROBIN_CLIENT_SECRET || '';
   const baseConfig = withAdMobCompatibility(config);
 
   if (!personal) {
     return {
       ...baseConfig,
-      extra: { ...baseConfig.extra, allFiles: false },
+      extra: { ...baseConfig.extra, allFiles: false, robinSecret },
     };
   }
 
@@ -41,6 +43,6 @@ module.exports = ({ config }) => {
       // Storage permissions stay for the file library; mic/overlay/background audio stay blocked.
       blockedPermissions: (baseConfig.android?.blockedPermissions || []).filter((p) => !/EXTERNAL_STORAGE/.test(p)),
     },
-    extra: { ...baseConfig.extra, allFiles: true },
+    extra: { ...baseConfig.extra, allFiles: true, robinSecret },
   };
 };
