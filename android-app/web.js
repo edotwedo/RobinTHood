@@ -1,6 +1,6 @@
-// Free, keyless web search for Robin: DuckDuckGo first, Wikipedia as backup.
-// Results (plus a little text from the top pages) are handed to the model
-// along with the user's message.
+// RobinTHood Web Search & Page Extraction Client
+// Connects to the hardened Cloudflare edge worker with automatic circuit-breaker
+// and tiered fallback (DuckDuckGo Lite, Wikipedia).
 import { fetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
 
@@ -8,6 +8,16 @@ const UA = 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, l
 const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
 const CLIENT_SECRET = 'rth_live_sec_9f82a17cb6e4402eb06a287955c4df01';
 
+// Edge worker circuit breaker (trips on timeout or 5xx to protect mobile UX)
+let workerFailedUntil = 0;
+function isWorkerAvailable() {
+  return Date.now() > workerFailedUntil;
+}
+function tripWorkerCircuit(durationMs = 60000) {
+  workerFailedUntil = Date.now() + durationMs;
+}
+
+// Generate HMAC-SHA256 timestamped signature for edge worker
 async function makeAuthHeaders(payloadString) {
   const ts = Math.floor(Date.now() / 1000).toString();
   const toHash = `${ts}:${payloadString}:${CLIENT_SECRET}`;
@@ -19,15 +29,28 @@ async function makeAuthHeaders(payloadString) {
   };
 }
 
+// Unicode-safe entity decoder
 function decodeEntities(s) {
   return s
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)));
 }
 
 const stripTags = (s) => decodeEntities(s.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+
+// URL sanitizer to prevent non-http schemes (intent:, javascript:, file:)
+export function sanitizeWebUrl(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.href;
+    }
+  } catch {}
+  return null;
+}
 
 async function withTimeout(promiseFn, ms) {
   const ctrl = new AbortController();
@@ -36,7 +59,6 @@ async function withTimeout(promiseFn, ms) {
 }
 
 function realUrl(href) {
-  // DuckDuckGo wraps links: //duckduckgo.com/l/?uddg=<encoded url>&rut=...
   const m = href.match(/[?&]uddg=([^&]+)/);
   if (m) { try { return decodeURIComponent(m[1]); } catch {} }
   if (href.startsWith('//')) return 'https:' + href;
@@ -65,7 +87,7 @@ async function searchDuckDuckGo(query, lang = 'en') {
     });
     if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
     return res.text();
-  }, 10000);
+  }, 4000);
 
   const results = [];
   const blocks = html.split(/class="result results_links/).slice(1);
@@ -74,9 +96,10 @@ async function searchDuckDuckGo(query, lang = 'en') {
     const a = b.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
     if (!a) continue;
     const snip = b.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/);
-    const url = realUrl(decodeEntities(a[1]));
-    if (!/^https?:\/\//.test(url) || url.includes('duckduckgo.com/y.js')) continue;
-    results.push({ title: stripTags(a[2]), url, snippet: snip ? stripTags(snip[1]) : '' });
+    const rawUrl = realUrl(decodeEntities(a[1]));
+    const cleanUrl = sanitizeWebUrl(rawUrl);
+    if (!cleanUrl || cleanUrl.includes('duckduckgo.com/y.js')) continue;
+    results.push({ title: stripTags(a[2]), url: cleanUrl, snippet: snip ? stripTags(snip[1]) : '' });
     if (results.length >= 6) break;
   }
   if (!results.length) throw new Error('DuckDuckGo returned no results');
@@ -94,17 +117,18 @@ async function searchDuckDuckGoLite(query, lang = 'en') {
     });
     if (!res.ok) throw new Error(`DuckDuckGo Lite HTTP ${res.status}`);
     return res.text();
-  }, 10000);
+  }, 4000);
 
   const results = [];
   const linkMatches = [...html.matchAll(/<a rel="nofollow" href="([^"]+)" class='result-link'>([\s\S]*?)<\/a>/g)];
   const snipMatches = [...html.matchAll(/<td class='result-snippet'>([\s\S]*?)<\/td>/g)];
   for (let i = 0; i < linkMatches.length; i++) {
-    const url = realUrl(decodeEntities(linkMatches[i][1]));
-    if (!/^https?:\/\//.test(url) || url.includes('duckduckgo.com/y.js')) continue;
+    const rawUrl = realUrl(decodeEntities(linkMatches[i][1]));
+    const cleanUrl = sanitizeWebUrl(rawUrl);
+    if (!cleanUrl || cleanUrl.includes('duckduckgo.com/y.js')) continue;
     const title = stripTags(linkMatches[i][2]);
     const snippet = snipMatches[i] ? stripTags(snipMatches[i][1]) : '';
-    results.push({ title, url, snippet });
+    results.push({ title, url: cleanUrl, snippet });
     if (results.length >= 6) break;
   }
   if (!results.length) throw new Error('DuckDuckGo Lite returned no results');
@@ -118,7 +142,7 @@ async function searchWikipedia(query, lang = 'en') {
     const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.7' } });
     if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
     return res.json();
-  }, 8000);
+  }, 4000);
   const hits = json?.query?.search ?? [];
   if (!hits.length) throw new Error('Wikipedia returned no results');
   return hits.map((h) => ({
@@ -130,43 +154,54 @@ async function searchWikipedia(query, lang = 'en') {
 
 // Pull readable text from a page, best effort.
 export async function pageText(url, maxChars = 2500) {
+  const cleanUrl = sanitizeWebUrl(url);
+  if (!cleanUrl) return '';
+
   // 1. Try dedicated edge worker extraction first (authenticated POST, strips tracking/scripts on edge)
-  try {
-    const payload = JSON.stringify({ url, maxChars });
-    const headers = await makeAuthHeaders(payload);
-    const json = await withTimeout(async (signal) => {
-      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
-        method: 'POST',
-        headers,
-        body: payload,
-        signal,
-      });
-      if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
-      return res.json();
-    }, 6000);
-    if (json?.ok && json.text) {
-      return json.text.slice(0, maxChars);
+  if (isWorkerAvailable()) {
+    try {
+      const payload = JSON.stringify({ url: cleanUrl, maxChars });
+      const headers = await makeAuthHeaders(payload);
+      const json = await withTimeout(async (signal) => {
+        const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
+          method: 'POST',
+          headers,
+          body: payload,
+          signal,
+        });
+        if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
+        return res.json();
+      }, 4000);
+      if (json?.ok && json.text) {
+        return json.text.slice(0, maxChars);
+      }
+    } catch {
+      tripWorkerCircuit(60000);
     }
-  } catch {
-    // Continue to client-side fetch fallback
   }
 
   // 2. Direct client fetch fallback
   try {
     const html = await withTimeout(async (signal) => {
-      const res = await fetch(url, { signal, headers: { 'User-Agent': UA, Accept: 'text/html' } });
+      const res = await fetch(cleanUrl, { signal, headers: { 'User-Agent': UA, Accept: 'text/html' } });
       if (!res.ok) throw new Error('bad status');
       const type = res.headers.get('content-type') || '';
       if (!type.includes('html') && !type.includes('text')) throw new Error('not text');
-      return (await res.text()).slice(0, 400000);
-    }, 7000);
+      return (await res.text()).slice(0, 200000);
+    }, 4000);
+
+    // Filter bot challenges
+    if (html.includes('cf-browser-verification') || html.includes('Just a moment...') || html.includes('captcha-delivery')) {
+      return '';
+    }
+
     let body = html
       .replace(/<(script|style|noscript|svg|nav|header|footer|form|aside)[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ');
     const main = body.match(/<(article|main)[\s\S]*?<\/\1>/i);
     if (main) body = main[0];
     const text = stripTags(body);
-    return text.length > 200 ? text.slice(0, maxChars) : '';
+    return text.length > 40 ? text.slice(0, maxChars) : '';
   } catch {
     return '';
   }
@@ -175,79 +210,68 @@ export async function pageText(url, maxChars = 2500) {
 // Search only (no page reading); the model decides which pages to open.
 export async function searchWeb(query, lang = 'en') {
   // 1. Try dedicated edge worker first (authenticated POST, edge-cached, bot-immune)
-  try {
-    const payload = JSON.stringify({ query, lang });
-    const headers = await makeAuthHeaders(payload);
-    const json = await withTimeout(async (signal) => {
-      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/search`, {
-        method: 'POST',
-        headers,
-        body: payload,
-        signal,
-      });
-      if (!res.ok) throw new Error(`Worker search HTTP ${res.status}`);
-      return res.json();
-    }, 6000);
-    if (json?.results?.length) {
-      return { source: json.source || 'Robin Search', results: json.results };
+  if (isWorkerAvailable()) {
+    try {
+      const payload = JSON.stringify({ query, lang });
+      const headers = await makeAuthHeaders(payload);
+      const json = await withTimeout(async (signal) => {
+        const res = await fetch(`${SEARCH_SERVICE_URL}/v1/search`, {
+          method: 'POST',
+          headers,
+          body: payload,
+          signal,
+        });
+        if (!res.ok) throw new Error(`Worker search HTTP ${res.status}`);
+        return res.json();
+      }, 4000);
+      if (json?.results?.length) {
+        const cleanResults = json.results
+          .map((r) => ({ title: stripTags(r.title), url: sanitizeWebUrl(r.url), snippet: stripTags(r.snippet || '') }))
+          .filter((r) => r.url);
+        if (cleanResults.length) {
+          return {
+            source: json.source || 'Robin Search',
+            attribution: json.attribution || null,
+            results: cleanResults,
+          };
+        }
+      }
+    } catch {
+      tripWorkerCircuit(60000);
     }
-  } catch {
-    // Continue to client-side fallback
   }
 
   // 2. Client-side fallback if worker is unreachable
   try {
-    return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query, lang) };
+    return { source: 'DuckDuckGo', attribution: null, results: await searchDuckDuckGo(query, lang) };
   } catch {
     try {
-      return { source: 'DuckDuckGo Lite', results: await searchDuckDuckGoLite(query, lang) };
+      return { source: 'DuckDuckGo Lite', attribution: null, results: await searchDuckDuckGoLite(query, lang) };
     } catch {
-      return { source: 'Wikipedia', results: await searchWikipedia(query, lang) };
+      try {
+        return { source: 'Wikipedia', attribution: null, results: await searchWikipedia(query, lang) };
+      } catch {
+        return { source: 'None', attribution: null, results: [] };
+      }
     }
   }
 }
 
-// Build a search query. Short follow-ups ("what about tomorrow?") borrow the
-// previous question so the search has context.
+// Build a search query. Handles multilingual CJK scripts and short follow-ups safely.
 export function searchQueryFrom(history) {
   const users = history.filter((m) => m.role === 'user').map((m) => m.content.trim());
   const last = users[users.length - 1] || '';
   const prev = users[users.length - 2];
   let q = last;
-  if (prev && last.split(/\s+/).length < 6) q = `${prev} ${last}`;
-  return q.replace(/\s+/g, ' ').slice(0, 240);
-}
 
-// Returns { query, results: [{title,url,snippet,text?}], source } or throws.
-export async function webSearch(query, lang = 'en') {
-  let results;
-  let source = 'DuckDuckGo';
-  try {
-    results = await searchDuckDuckGo(query, lang);
-  } catch {
-    try {
-      results = await searchDuckDuckGoLite(query, lang);
-      source = 'DuckDuckGo Lite';
-    } catch {
-      results = await searchWikipedia(query, lang);
-      source = 'Wikipedia';
-    }
+  const hasCJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(last);
+  const isShortFollowUp = hasCJK ? last.length <= 6 : last.split(/\s+/).length < 6;
+
+  if (prev && isShortFollowUp) {
+    const prevExcerpt = prev.slice(0, 100);
+    q = `${prevExcerpt} ${last}`;
   }
-  // Read the top two pages for more than a one-line snippet.
-  const texts = await Promise.all(results.slice(0, 2).map((r) => pageText(r.url)));
-  texts.forEach((t, i) => { if (t) results[i].text = t; });
-  return { query, results, source };
-}
 
-export function formatForModel(web) {
-  const lines = web.results.map((r, i) => {
-    let s = `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`;
-    if (r.text) s += `\nPage excerpt: ${r.text}`;
-    return s;
-  });
-  return (
-    `Web search results for "${web.query}" (via ${web.source}). Use them to answer with current information. ` +
-    'Cite sources inline like [1] when you use them. If the results do not answer the question, say so and answer from what you know.\n\n' +
-    lines.join('\n\n')
-  );
+  const sanitized = q.replace(/\s+/g, ' ');
+  return Array.from(sanitized).slice(0, 200).join('');
 }

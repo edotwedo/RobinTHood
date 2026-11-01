@@ -47,8 +47,9 @@ export function toolPrompt({ web, allFiles }) {
       : 'Web access is switched off right now (the user can turn on the Web button).\n') +
     'When the user asks you to save, write, make or create a file, note, list or document, use WRITE; you do have access to their folder. ' +
     'Always reply in the same language the user speaks (e.g. Spanish, French, German, Portuguese, Japanese, Chinese, Hindi, etc.). ' +
-    'When you are done, answer normally with no action lines. Never claim you cannot access the internet' +
-    (web ? '' : ' (just say Web is off)') + ' or the user\'s files.'
+    'When you are done, answer normally with no action lines. ' +
+    'If web searches fail or return no relevant data, clearly inform the user that live web access was unavailable ' +
+    'instead of guessing or inventing facts. Never claim you cannot access the user\'s files.'
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, FlatList, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -116,7 +116,27 @@ function Chat() {
   const [reportReason, setReportReason] = useState(null);
   const [reportNote, setReportNote] = useState('');
   const [reportDone, setReportDone] = useState('');
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const listRef = useRef(null);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleOpenSource = async (url) => {
+    if (!url || typeof url !== 'string') return;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+      const can = await Linking.canOpenURL(url);
+      if (can) await Linking.openURL(url);
+    } catch {}
+  };
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const theme = useAudioPlayer(require('./assets/theme.m4a'));
@@ -338,7 +358,7 @@ function Chat() {
                   <Pressable
                     key={src.url || i}
                     style={[styles.sourceCard, src.opened && styles.sourceCardOpened]}
-                    onPress={() => Linking.openURL(src.url)}
+                    onPress={() => handleOpenSource(src.url)}
                   >
                     <View style={styles.sourceCardHeader}>
                       <Text style={styles.sourceBadge}>{src.opened ? '📄 READ' : '🔗 LINK'}</Text>
@@ -393,17 +413,17 @@ function Chat() {
         </Pressable>
       </View>
 
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.chatContent}
+          contentContainerStyle={[styles.chatContent, { paddingBottom: 16 }]}
           onContentSizeChange={scrollToEnd}
           keyboardShouldPersistTaps="handled"
         />
-        <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        <View style={[styles.inputRow, { paddingBottom: isKeyboardVisible ? 8 : Math.max(insets.bottom, 10) }]}>
           <TextInput
             style={styles.input}
             value={input}
@@ -423,7 +443,7 @@ function Chat() {
             </Pressable>
           )}
         </View>
-        <AdBanner isPro={settings.isPro} />
+        {!settings.isPro && !isKeyboardVisible ? <AdBanner isPro={false} /> : null}
       </KeyboardAvoidingView>
 
       <Modal visible={!!reporting} transparent animationType="fade" onRequestClose={() => setReporting(null)}>
@@ -570,7 +590,15 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.4. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.4. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
+              <Pressable
+                style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
+                onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
+              >
+                <Text style={[styles.optionText, { color: C.green, fontWeight: '600' }]}>
+                  🔒 Privacy Policy & Data Disclosures ↗
+                </Text>
+              </Pressable>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
