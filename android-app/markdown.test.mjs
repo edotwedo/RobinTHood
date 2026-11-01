@@ -56,7 +56,7 @@ test('inline bold, italic, code, strike and links', () => {
   assert.deepEqual(pick('code'), ['x*y']);
   assert.deepEqual(pick('strike'), ['old']);
   assert.deepEqual(s.filter((x) => x.url).map((x) => [x.text, x.url]), [['docs', 'https://ex.com/a']]);
-  assert.equal(s.map((x) => x.text).join(''), 'Use bold and it or it, x*y, old and docs.');
+  assert.equal(s.map((x) => x.text).join(''), 'Use bold and it or it, x*y, old and docs (ex.com).');
 });
 
 test('nested emphasis and bare URLs', () => {
@@ -80,4 +80,18 @@ test('things that are not markup stay literal', () => {
   assert.ok(parseInline('2 * 3 * 4').every((x) => !x.italic));
   assert.deepEqual(types(''), []);
   assert.deepEqual(types('#hashtag not heading'), ['para']);
+});
+
+test('a link whose label hides its real site names the host after it', () => {
+  const s = parseInline('[google.com](https://evil.example/login) and [Google](https://www.google.com/x)');
+  const hints = s.filter((x) => x.hint).map((x) => x.text);
+  assert.deepEqual(hints, [' (evil.example)', ' (google.com)']);
+  assert.ok(parseInline('[docs.ex.com page](https://docs.ex.com/a)').every((x) => !x.hint));
+  assert.ok(parseInline('[evil](javascript:alert(1))').every((x) => !x.hint && !x.url));
+});
+
+test('URLs with balanced parentheses stay whole', () => {
+  const s = parseInline('[Foo](https://en.wikipedia.org/wiki/Foo_(bar)) after');
+  assert.equal(s.find((x) => x.url).url, 'https://en.wikipedia.org/wiki/Foo_(bar)');
+  assert.equal(s.map((x) => x.text).join(''), 'Foo (en.wikipedia.org) after');
 });

@@ -97,14 +97,19 @@ export function parseBlocks(text) {
 
 // Inline spans: [{ text, bold?, italic?, strike?, code?, url? }]. Links keep only
 // http(s) targets; anything else is shown as its label text.
-const INLINE_RE = /(`+)([^`]+?)\1|\[([^\]\n]+)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)|(\*\*|__)(?=\S)([\s\S]+?)(?<=\S)\5|~~(?=\S)([\s\S]+?)(?<=\S)~~|(?<![\w*])\*(?=[^\s*])([^*\n]+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=[^\s_])([^_\n]+?)(?<=\S)_(?![\w_])|(https?:\/\/[^\s<>()\]]+[^\s<>()\].,;:!?'"])|\\([\\`*_~[\]()#|>-])/g;
+const INLINE_RE = /(`+)([^`]+?)\1|\[([^\]\n]+)\]\(\s*<?((?:[^()\s>]|\([^()\s]*\))+)>?(?:\s+"[^"]*")?\s*\)|(\*\*|__)(?=\S)([\s\S]+?)(?<=\S)\5|~~(?=\S)([\s\S]+?)(?<=\S)~~|(?<![\w*])\*(?=[^\s*])([^*\n]+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=[^\s_])([^_\n]+?)(?<=\S)_(?![\w_])|(https?:\/\/[^\s<>()\]]+[^\s<>()\].,;:!?'"])|\\([\\`*_~[\]()#|>-])/g;
+
+const hostOf = (url) => {
+  const m = url.match(/^https?:\/\/(?:[^@/?#]*@)?([^/?#:]+)/i);
+  return m ? m[1].toLowerCase().replace(/^www\./, '') : '';
+};
 
 export function parseInline(text, style = {}) {
   const out = [];
   const push = (s, st) => {
     if (!s) return;
     const last = out[out.length - 1];
-    const same = last && ['bold', 'italic', 'strike', 'code', 'url'].every((k) => last[k] === st[k]);
+    const same = last && ['bold', 'italic', 'strike', 'code', 'url', 'hint'].every((k) => last[k] === st[k]);
     if (same) last.text += s;
     else out.push({ text: s, ...st });
   };
@@ -118,6 +123,10 @@ export function parseInline(text, style = {}) {
     else if (m[3] !== undefined) {
       const safe = /^https?:\/\//i.test(m[4]) ? m[4] : undefined;
       for (const span of parseInline(m[3], { ...style, url: safe })) push(span.text, span);
+      // A label can claim one site and point at another, and a web page can steer the
+      // model into writing one, so name the real host whenever the label doesn't.
+      const host = safe && hostOf(safe);
+      if (host && !m[3].toLowerCase().includes(host)) push(` (${host})`, { ...style, hint: true });
     } else if (m[6] !== undefined) for (const span of parseInline(m[6], { ...style, bold: true })) push(span.text, span);
     else if (m[7] !== undefined) for (const span of parseInline(m[7], { ...style, strike: true })) push(span.text, span);
     else if (m[8] !== undefined || m[9] !== undefined) {

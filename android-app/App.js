@@ -72,6 +72,7 @@ function Inline({ text, style }) {
             s.strike && styles.mdStrike,
             s.code && styles.mdInlineCode,
             s.url && styles.mdLink,
+            s.hint && styles.mdHint,
           ]}
           onPress={s.url ? () => openLink(s.url) : undefined}
         >
@@ -762,6 +763,7 @@ const styles = StyleSheet.create({
   mdStrike: { textDecorationLine: 'line-through' },
   mdInlineCode: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', backgroundColor: '#060913', color: '#e2e8f0', fontSize: 13 },
   mdLink: { color: '#60a5fa', textDecorationLine: 'underline' },
+  mdHint: { color: C.faint, fontSize: 12 },
   mdH1: { fontSize: 21, lineHeight: 28, fontWeight: '800', marginTop: 4 },
   mdH2: { fontSize: 18, lineHeight: 25, fontWeight: '700', marginTop: 4 },
   mdH3: { fontSize: 16, lineHeight: 23, fontWeight: '700', marginTop: 2 },
