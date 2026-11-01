@@ -187,9 +187,16 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
   const sources = [];
   const files = [];
   let usedId = state.order[0];
+  // An earlier reply built on web pages is in the history the model sees, so text a
+  // page planted there can steer this message too: start tainted. Its sources were
+  // shown to the user under that reply, so OPENing them again needs no tap.
+  const earlierSources = history.filter((m) => m.role === 'assistant' && m.sources?.length).flatMap((m) => m.sources);
   const taint = {
-    web: false,
-    safeUrls: new Set(history.filter((m) => m.role === 'user').flatMap((m) => urlsIn(String(m.content || '')))),
+    web: earlierSources.length > 0,
+    safeUrls: new Set([
+      ...history.filter((m) => m.role === 'user').flatMap((m) => urlsIn(String(m.content || ''))),
+      ...earlierSources.map((s) => s.url),
+    ]),
   };
 
   for (let step = 0; step <= MAX_STEPS; step++) {
