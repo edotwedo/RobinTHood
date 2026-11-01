@@ -1,7 +1,22 @@
 // Robin's folder: a folder on the phone the user picks once (Android's folder
 // picker). Robin can list, read and write files there, and the user sees the
 // same files in their Files app.
-import { StorageAccessFramework as SAF, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
+import {
+  StorageAccessFramework as SAF, documentDirectory, getInfoAsync, makeDirectoryAsync,
+  readAsStringAsync, readDirectoryAsync, writeAsStringAsync,
+} from 'expo-file-system/legacy';
+
+// iPhone: no folder picker or all-files access. Robin's files live in the app's own
+// Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
+export const IS_IOS = Platform.OS === 'ios';
+export async function iosFolder() {
+  const dir = `${documentDirectory}RobinTHood/`;
+  const info = await getInfoAsync(dir);
+  if (!info.exists) await makeDirectoryAsync(dir, { intermediates: true });
+  return dir;
+}
+const isPlainDir = (uri) => uri.startsWith('file://');
 
 const MIME = {
   md: 'text/markdown', txt: 'text/plain', csv: 'text/csv', json: 'application/json',
@@ -29,6 +44,10 @@ export async function pickFolder() {
 }
 
 async function entries(dirUri) {
+  if (isPlainDir(dirUri)) {
+    const names = await readDirectoryAsync(dirUri);
+    return names.map((name) => ({ uri: dirUri + encodeURIComponent(name), name }));
+  }
   const uris = await SAF.readDirectoryAsync(dirUri);
   return uris.map((uri) => ({ uri, name: nameOf(uri) }));
 }
@@ -49,12 +68,13 @@ export async function writeFile(dirUri, name, content) {
   const fileName = cleanName(name);
   const existing = (await entries(dirUri)).find((e) => e.name.toLowerCase() === fileName.toLowerCase());
   let uri = existing?.uri;
+  if (!uri && isPlainDir(dirUri)) uri = dirUri + encodeURIComponent(fileName);
   if (!uri) {
     const ext = fileName.split('.').pop().toLowerCase();
     uri = await SAF.createFileAsync(dirUri, fileName, MIME[ext] || 'application/octet-stream');
   }
   await writeAsStringAsync(uri, content);
-  return { name: nameOf(uri) || fileName, chars: content.length, replaced: Boolean(existing) };
+  return { name: isPlainDir(dirUri) ? fileName : nameOf(uri) || fileName, chars: content.length, replaced: Boolean(existing) };
 }
 
 // ---- Phil's personal build: whole-phone access ("All files access") ----

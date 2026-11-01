@@ -11,7 +11,7 @@ import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
 import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
-import { ALL_FILES_ROOT, hasAllFilesAccess, nameOf, openAllFilesSetting, pickFolder } from './files';
+import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder } from './files';
 
 // Phil's personal build (whole-phone file access) vs the Play Store build.
 const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
@@ -138,6 +138,7 @@ function Chat() {
           web: settings.webSearch,
           allFiles: ALL_FILES,
           getFolder: async () => {
+            if (IS_IOS) return iosFolder();
             if (ALL_FILES) {
               if (await hasAllFilesAccess()) return ALL_FILES_ROOT;
               setStatus('Turn on All files access for Robin, then ask again…');
@@ -389,7 +390,12 @@ function Chat() {
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))} />
               <Field label="OpenRouter model" value={settings.openRouterModel} placeholder="openrouter/free"
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))} />
-              {ALL_FILES ? (
+              {IS_IOS ? (
+                <>
+                  <Text style={styles.fieldLabel}>Robin's files</Text>
+                  <Text style={styles.hint}>Saved in the Files app: On My iPhone, then RobinTHood.</Text>
+                </>
+              ) : ALL_FILES ? (
                 <>
                   <Text style={styles.fieldLabel}>Files: whole phone (personal build)</Text>
                   <Pressable style={styles.pill} onPress={() => openAllFilesSetting(PACKAGE).catch(() => {})}>
@@ -416,7 +422,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.7.3. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.4. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
