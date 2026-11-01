@@ -1,3 +1,13 @@
 name = "robinthood-search"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+
+# Per-IP limit for signed requests, shared across isolates in a Cloudflare location.
+# Keep limit in step with SIGNED_LIMIT_PER_MIN in worker.js.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
