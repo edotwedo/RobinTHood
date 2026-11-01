@@ -1,0 +1,8 @@
+name = "robinthood-reports"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "robinthood-reports"
+database_id = "REPLACE_WITH_ID_FROM_d1_create"

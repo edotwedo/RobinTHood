@@ -9,6 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
+import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
 import { ALL_FILES_ROOT, hasAllFilesAccess, nameOf, openAllFilesSetting, pickFolder } from './files';
 
@@ -59,6 +60,10 @@ function Chat() {
   const [picker, setPicker] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [reporting, setReporting] = useState(null); // { message, question }
+  const [reportReason, setReportReason] = useState(null);
+  const [reportNote, setReportNote] = useState('');
+  const [reportDone, setReportDone] = useState('');
   const listRef = useRef(null);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -91,6 +96,7 @@ function Chat() {
         }
       } catch {}
       setLoaded(true);
+      flushReports().catch(() => {});
     })();
   }, []);
 
@@ -182,6 +188,29 @@ function Chat() {
     setMessages([INTRO]);
   };
 
+  const openReport = (item) => {
+    const idx = messages.findIndex((m) => m.id === item.id);
+    const question = [...messages.slice(0, idx)].reverse().find((m) => m.role === 'user')?.content || '';
+    setReporting({ message: item, question });
+    setReportReason(null);
+    setReportNote('');
+    setReportDone('');
+  };
+
+  const sendReport = async () => {
+    if (!reporting || !reportReason) return;
+    const outcome = await submitReport({
+      reason: reportReason,
+      note: reportNote.trim(),
+      model: reporting.message.model,
+      question: reporting.question,
+      answer: reporting.message.content,
+      version: Constants.expoConfig?.version,
+    });
+    setMessages((prev) => prev.map((m) => (m.id === reporting.message.id ? { ...m, reported: true } : m)));
+    setReportDone(outcome === 'sent' ? 'Thanks. Your report was sent.' : 'Thanks. Your report is saved and will be sent when the connection is back.');
+  };
+
   const renderItem = ({ item }) => {
     const mine = item.role === 'user';
     return (
@@ -190,6 +219,11 @@ function Chat() {
           <View style={styles.msgHeader}>
             <Text style={[styles.modelTag, item.error && { color: C.red }]}>{item.model}</Text>
             {item.seconds ? <Text style={styles.latency}>{item.seconds.toFixed(1)}s</Text> : null}
+            {!item.intro && !item.pending && item.content ? (
+              <Pressable style={styles.reportBtn} hitSlop={10} onPress={() => openReport(item)}>
+                <Text style={styles.reportText}>{item.reported ? 'Reported' : '⚑ Report'}</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
         {item.steps?.length ? (
@@ -287,6 +321,38 @@ function Chat() {
         </View>
       </KeyboardAvoidingView>
 
+      <Modal visible={!!reporting} transparent animationType="fade" onRequestClose={() => setReporting(null)}>
+        <View style={styles.overlay}>
+          <View style={styles.card}>
+            {reportDone ? (
+              <>
+                <Text style={styles.cardTitle}>Report received</Text>
+                <Text style={styles.msgText}>{reportDone}</Text>
+                <Pressable style={styles.closeBtn} onPress={() => setReporting(null)}><Text style={styles.closeText}>Done</Text></Pressable>
+              </>
+            ) : (
+              <ScrollView keyboardShouldPersistTaps="handled">
+                <Text style={styles.cardTitle}>Report this answer</Text>
+                <Text style={styles.hint}>The answer and your question are sent to the RobinTHood developer so it can be reviewed.</Text>
+                {REPORT_REASONS.map((r) => (
+                  <Pressable key={r.id} style={[styles.option, reportReason === r.id && styles.optionActive]} onPress={() => setReportReason(r.id)}>
+                    <Text style={[styles.optionText, reportReason === r.id && { color: '#fff', fontWeight: '700' }]}>{r.label}</Text>
+                  </Pressable>
+                ))}
+                <TextInput style={[styles.fieldInput, { marginTop: 8 }]} value={reportNote} onChangeText={setReportNote}
+                  placeholder="Anything else? (optional)" placeholderTextColor={C.faint} multiline />
+                <Pressable style={[styles.closeBtn, !reportReason && { opacity: 0.4 }]} disabled={!reportReason} onPress={sendReport}>
+                  <Text style={styles.closeText}>Send report</Text>
+                </Pressable>
+                <Pressable style={{ alignItems: 'center', marginTop: 12 }} onPress={() => setReporting(null)}>
+                  <Text style={styles.hint}>Cancel</Text>
+                </Pressable>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
         <Pressable style={styles.overlay} onPress={() => setPicker(false)}>
           <View style={styles.card}>
@@ -350,7 +416,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.7.1. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.7.2. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
@@ -403,6 +469,8 @@ const styles = StyleSheet.create({
   userMsg: { backgroundColor: C.user, alignSelf: 'flex-end', borderBottomRightRadius: 2 },
   botMsg: { backgroundColor: C.panel, alignSelf: 'flex-start', borderBottomLeftRadius: 2, borderWidth: 1, borderColor: C.line },
   msgHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  reportBtn: { marginLeft: 'auto', paddingLeft: 12 },
+  reportText: { fontSize: 11, color: C.faint },
   modelTag: { fontSize: 10, fontWeight: '700', color: C.green, textTransform: 'uppercase' },
   latency: { fontSize: 10, color: C.faint, marginLeft: 6 },
   msgText: { color: C.text, fontSize: 15, lineHeight: 22 },

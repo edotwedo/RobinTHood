@@ -1,0 +1,68 @@
+// "Report this answer" (Google Play's AI-generated content policy requires in-app
+// reporting of offensive AI replies). Reports go to the robinthood-reports worker;
+// if it can't be reached, they wait on the phone and are sent on a later launch.
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetch } from 'expo/fetch';
+
+export const REPORT_URL = 'https://robinthood-reports.phone-liaison.workers.dev/report';
+const QUEUE_KEY = '@robinthood_report_queue_v1';
+const ID_KEY = '@robinthood_install_id';
+
+export const REPORT_REASONS = [
+  { id: 'offensive', label: 'Offensive or hateful' },
+  { id: 'sexual', label: 'Sexual content' },
+  { id: 'dangerous', label: 'Dangerous or harmful' },
+  { id: 'wrong', label: 'Wrong or made up' },
+  { id: 'other', label: 'Something else' },
+];
+
+async function installId() {
+  let id = await AsyncStorage.getItem(ID_KEY).catch(() => null);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    await AsyncStorage.setItem(ID_KEY, id).catch(() => {});
+  }
+  return id;
+}
+
+async function post(report) {
+  const res = await fetch(REPORT_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(report),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+async function readQueue() {
+  try { return JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch { return []; }
+}
+
+// Returns 'sent' or 'queued'. Either way the user's report is kept.
+export async function submitReport({ reason, note, model, question, answer, version }) {
+  const report = {
+    reason, note: note || '', model: model || '', version: version || '',
+    question: (question || '').slice(0, 2000), answer: (answer || '').slice(0, 6000),
+    install_id: await installId(),
+  };
+  try {
+    await post(report);
+    return 'sent';
+  } catch {
+    const q = await readQueue();
+    q.push(report);
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-50))).catch(() => {});
+    return 'queued';
+  }
+}
+
+// Try to send reports that were saved while offline.
+export async function flushReports() {
+  const q = await readQueue();
+  if (!q.length) return;
+  const left = [];
+  for (const r of q) {
+    try { await post(r); } catch { left.push(r); }
+  }
+  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(left)).catch(() => {});
+}
