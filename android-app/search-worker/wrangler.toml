@@ -11,3 +11,13 @@ namespace_id = "1001"
   [ratelimits.simple]
   limit = 30
   period = 60
+
+# Nonce store shared by every Cloudflare location, so a signed request can't be
+# replayed through a different location inside the 120s window.
+[[durable_objects.bindings]]
+name = "NONCES"
+class_name = "NonceStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NonceStore"]

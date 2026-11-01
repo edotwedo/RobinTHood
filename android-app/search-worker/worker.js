@@ -90,10 +90,32 @@ async function hmacHex(secret, message) {
   return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Records a nonce and reports whether it was already seen. With the NONCES Durable
+// Object every Cloudflare location agrees; without it (or if it errors) the
+// location's own cache is used, which leaves cross-location replay possible.
+async function nonceAlreadyUsed(env, nonce) {
+  // A request is valid from ts-120s to ts+120s, so remember each nonce for both halves.
+  const ttlSec = REPLAY_WINDOW_SEC * 2;
+  if (env.NONCES) {
+    try {
+      const stub = env.NONCES.get(env.NONCES.idFromName(`shard-${nonce.slice(0, 2).toLowerCase()}`));
+      const res = await stub.fetch('https://nonces/claim', { method: 'POST', body: JSON.stringify({ nonce, ttlSec }) });
+      if (res.status === 409) return true;
+      if (res.ok) return false;
+      console.error('Nonce store HTTP', res.status);
+    } catch (e) {
+      console.error('Nonce store error:', e.message);
+    }
+  }
+  const nonceKey = new Request(`https://nonce.robinthood.invalid/${nonce}`);
+  const cache = caches.default;
+  if (await cache.match(nonceKey)) return true;
+  await cache.put(nonceKey, new Response('1', { headers: { 'Cache-Control': `max-age=${ttlSec}` } }));
+  return false;
+}
+
 // HMAC-SHA256 over "ts:nonce:body", 120s window, each nonce accepted once.
-// The nonce record lives in this POP's cache, so a replay through another POP is
-// still possible inside the window; a KV or Durable Object store would close that.
-async function verifyAppSignature(request, rawBody, secret) {
+async function verifyAppSignature(request, rawBody, secret, env) {
   if (!secret) {
     return { ok: false, status: 503, error: 'Service not configured' };
   }
@@ -124,12 +146,9 @@ async function verifyAppSignature(request, rawBody, secret) {
     return { ok: false, status: 403, error: 'Forbidden: Invalid app signature' };
   }
 
-  const nonceKey = new Request(`https://nonce.robinthood.invalid/${nonce}`);
-  const cache = caches.default;
-  if (await cache.match(nonceKey)) {
+  if (await nonceAlreadyUsed(env, nonce)) {
     return { ok: false, status: 401, error: 'Unauthorized: Replayed request' };
   }
-  await cache.put(nonceKey, new Response('1', { headers: { 'Cache-Control': `max-age=${REPLAY_WINDOW_SEC * 2}` } }));
 
   return { ok: true };
 }
@@ -353,7 +372,7 @@ export default {
         }
 
         const rawBody = await request.text();
-        const auth = await verifyAppSignature(request, rawBody, clientSecret);
+        const auth = await verifyAppSignature(request, rawBody, clientSecret, env);
         if (!auth.ok) {
           return new Response(JSON.stringify({ error: auth.error }), {
             status: auth.status,
@@ -461,7 +480,7 @@ export default {
         }
 
         const rawBody = await request.text();
-        const auth = await verifyAppSignature(request, rawBody, clientSecret);
+        const auth = await verifyAppSignature(request, rawBody, clientSecret, env);
         if (!auth.ok) {
           return new Response(JSON.stringify({ error: auth.error }), {
             status: auth.status,
@@ -532,3 +551,37 @@ export default {
     }
   },
 };
+
+// One shard of the nonce store (256 shards, keyed by the nonce's first two characters).
+// A Durable Object handles one request at a time, so check-then-record is atomic, and
+// every Cloudflare location reaches the same object, which closes cross-location replay.
+export class NonceStore {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    let nonce, ttlSec;
+    try {
+      ({ nonce, ttlSec } = await request.json());
+    } catch {
+      return new Response('bad request', { status: 400 });
+    }
+    if (typeof nonce !== 'string' || !nonce || !(ttlSec > 0)) return new Response('bad request', { status: 400 });
+
+    const now = Date.now();
+    const expires = await this.state.storage.get(nonce);
+    if (expires && expires > now) return new Response('replay', { status: 409 });
+    await this.state.storage.put(nonce, now + ttlSec * 1000);
+
+    // Drop expired nonces now and then so a shard never grows without bound.
+    if (Math.random() < 0.05) {
+      const stale = [];
+      for (const [key, exp] of await this.state.storage.list({ limit: 1000 })) {
+        if (exp <= now) stale.push(key);
+      }
+      for (let i = 0; i < stale.length; i += 128) await this.state.storage.delete(stale.slice(i, i + 128));
+    }
+    return new Response('ok');
+  }
+}
