@@ -12,6 +12,9 @@ const CORS_HEADERS = {
 const REPLAY_WINDOW_SEC = 120;
 const MAX_READ_CHARS = 20000;
 const MAX_REDIRECTS = 5;
+// Keep in step with [[ratelimits]] simple.limit in wrangler.toml.
+const SIGNED_LIMIT_PER_MIN = 30;
+const UNSIGNED_FLOOD_LIMIT_PER_MIN = 120;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 const DDG_REGIONS = {
@@ -36,7 +39,9 @@ function timingSafeEqual(a, b) {
   return diff === 0;
 }
 
-// In-memory sliding rate limiter per edge POP
+// In-memory fixed-window limiter, per isolate. Isolates come and go, so this is only a
+// coarse flood guard in front of signature checks; the real per-user limit is
+// signedRequestLimited below.
 const ipBuckets = new Map();
 function isRateLimited(ip, limit = 30, windowSec = 60) {
   if (!ip) return false;
@@ -54,6 +59,28 @@ function isRateLimited(ip, limit = 30, windowSec = 60) {
   }
   bucket.count++;
   return bucket.count > limit;
+}
+
+// Per-IP limit on requests that passed the signature check, so forged traffic can't
+// spend a real user's budget. Uses the Workers Rate Limiting binding (shared by all
+// isolates in a location, see wrangler.toml) and falls back to the isolate map.
+async function signedRequestLimited(env, ip) {
+  if (env.RATE_LIMITER) {
+    try {
+      const { success } = await env.RATE_LIMITER.limit({ key: `signed:${ip}` });
+      return !success;
+    } catch (e) {
+      console.error('Rate limiter error:', e.message);
+    }
+  }
+  return isRateLimited(`signed:${ip}`, SIGNED_LIMIT_PER_MIN, 60);
+}
+
+function rateLimitResponse() {
+  return new Response(JSON.stringify({ error: `Rate limit exceeded (max ${SIGNED_LIMIT_PER_MIN} requests/min). Please try again shortly.` }), {
+    status: 429,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Retry-After': '60' },
+  });
 }
 
 async function hmacHex(secret, message) {
@@ -311,12 +338,9 @@ export default {
         });
       }
 
-      // 3. Rate limiting check per IP
-      if (isRateLimited(clientIp, 30, 60)) {
-        return new Response(JSON.stringify({ error: 'Rate limit exceeded (max 30 requests/min). Please try again shortly.' }), {
-          status: 429,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Retry-After': '60' },
-        });
+      // 3. Coarse flood guard per IP, before any signature work
+      if (isRateLimited(clientIp, UNSIGNED_FLOOD_LIMIT_PER_MIN, 60)) {
+        return rateLimitResponse();
       }
 
       // 4. Endpoint: POST /v1/search
@@ -336,6 +360,7 @@ export default {
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
         }
+        if (await signedRequestLimited(env, clientIp)) return rateLimitResponse();
 
         let parsed;
         try {
@@ -443,6 +468,7 @@ export default {
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
         }
+        if (await signedRequestLimited(env, clientIp)) return rateLimitResponse();
 
         let parsed;
         try {
