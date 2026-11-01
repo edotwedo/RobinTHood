@@ -17,6 +17,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Search worker signing key; app.config.js bakes it into extra.robinSecret.
+      ROBIN_CLIENT_SECRET: ${{ secrets.ROBIN_CLIENT_SECRET }}
     defaults:
       run:
         working-directory: android-app

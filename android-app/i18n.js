@@ -16,6 +16,15 @@ export function getDeviceLocale() {
 export const STRINGS = {
   en: {
     appTitle: 'RobinTHood',
+    confirmOPEN: 'Open this link?',
+    confirmREAD: 'Let Robin read this file?',
+    confirmWRITE: 'Let Robin save this file?',
+    confirmLIST: 'Let Robin look in your files?',
+    confirmYourFiles: 'Your files',
+    confirmWhy: 'Robin has been reading web pages, and a page can try to trick it. Only allow this if you asked for it.',
+    confirmAllow: 'Allow',
+    confirmDeny: 'Don\'t allow',
+    confirmWaiting: 'Waiting for your OK…',
     webBtn: '🌐 Web',
     musicOn: '♪',
     musicOff: '♪̸',

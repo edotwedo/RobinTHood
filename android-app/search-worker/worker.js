@@ -4,10 +4,14 @@
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Robin-Timestamp, X-Robin-Signature',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Robin-Timestamp, X-Robin-Nonce, X-Robin-Signature',
 };
 
-const DEFAULT_SECRET = 'rth_live_sec_9f82a17cb6e4402eb06a287955c4df01';
+// The signing key lives only in the ROBIN_CLIENT_SECRET Worker secret. Without it every
+// signed endpoint refuses (fail closed); there is deliberately no built-in fallback.
+const REPLAY_WINDOW_SEC = 120;
+const MAX_READ_CHARS = 20000;
+const MAX_REDIRECTS = 5;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 const DDG_REGIONS = {
@@ -52,13 +56,30 @@ function isRateLimited(ip, limit = 30, windowSec = 60) {
   return bucket.count > limit;
 }
 
-// HMAC-SHA256 signature verification with 120s anti-replay window
+async function hmacHex(secret, message) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// HMAC-SHA256 over "ts:nonce:body", 120s window, each nonce accepted once.
+// The nonce record lives in this POP's cache, so a replay through another POP is
+// still possible inside the window; a KV or Durable Object store would close that.
 async function verifyAppSignature(request, rawBody, secret) {
+  if (!secret) {
+    return { ok: false, status: 503, error: 'Service not configured' };
+  }
+
   const tsHeader = request.headers.get('X-Robin-Timestamp');
+  const nonce = request.headers.get('X-Robin-Nonce');
   const sigHeader = request.headers.get('X-Robin-Signature');
 
-  if (!tsHeader || !sigHeader) {
+  if (!tsHeader || !nonce || !sigHeader) {
     return { ok: false, status: 401, error: 'Unauthorized: Missing RobinTHood app attestation headers' };
+  }
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(nonce)) {
+    return { ok: false, status: 400, error: 'Bad Request: Invalid nonce' };
   }
 
   const ts = parseInt(tsHeader, 10);
@@ -67,35 +88,71 @@ async function verifyAppSignature(request, rawBody, secret) {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > 120) {
+  if (Math.abs(now - ts) > REPLAY_WINDOW_SEC) {
     return { ok: false, status: 401, error: 'Unauthorized: Timestamp expired or clock drift > 120s' };
   }
 
-  const toHash = `${ts}:${rawBody}:${secret}`;
-  const enc = new TextEncoder();
-  const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(toHash));
-  const expectedSig = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('');
-
+  const expectedSig = await hmacHex(secret, `${ts}:${nonce}:${rawBody}`);
   if (!timingSafeEqual(sigHeader, expectedSig)) {
     return { ok: false, status: 403, error: 'Forbidden: Invalid app signature' };
   }
 
+  const nonceKey = new Request(`https://nonce.robinthood.invalid/${nonce}`);
+  const cache = caches.default;
+  if (await cache.match(nonceKey)) {
+    return { ok: false, status: 401, error: 'Unauthorized: Replayed request' };
+  }
+  await cache.put(nonceKey, new Response('1', { headers: { 'Cache-Control': `max-age=${REPLAY_WINDOW_SEC * 2}` } }));
+
   return { ok: true };
 }
 
-// SSRF prevention: blocks private, loopback, cloud metadata, and non-http protocols
+// Parses an IPv4 literal in any form URL parsing accepts (it already normalises
+// decimal, hex and octal forms to dotted quads). Returns the 4 octets or null.
+function ipv4Octets(host) {
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  return m ? m.slice(1).map(Number) : null;
+}
+
+function isPrivateIpv4([a, b]) {
+  return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) || a >= 224;
+}
+
+// SSRF prevention: http(s) only on default ports, no credentials, no private,
+// loopback, link-local or metadata addresses (v4 or v6), no internal names.
 function isUnsafeUrl(urlStr) {
   try {
     const u = new URL(urlStr);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
-    const host = u.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '169.254.169.254') return true;
-    if (/^10\.|^172\.(1[6-9]|2[0-9]|3[0-1])\.|^192\.168\./.test(host)) return true;
-    if (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.lan')) return true;
+    if (u.port !== '' || u.username || u.password) return true;
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    // Any IPv6 literal is refused: public sites are reached by name, and the
+    // literal forms (::1, fe80::, fc00::, ::ffff:10.0.0.1, ...) are SSRF bait.
+    if (host.startsWith('[')) return true;
+    // Single-label names and internal suffixes only resolve inside a network.
+    if (!host.includes('.') || /(^|\.)(localhost|local|internal|lan|home|arpa|corp|intranet)$/.test(host)) return true;
+    const v4 = ipv4Octets(host);
+    if (v4 && isPrivateIpv4(v4)) return true;
     return false;
   } catch {
     return true;
   }
+}
+
+// fetch() with redirects followed by hand, so every hop passes isUnsafeUrl.
+async function safeFetch(url, init) {
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (isUnsafeUrl(current)) throw new Error('Restricted URL');
+    const res = await fetch(current, { ...init, redirect: 'manual' });
+    if (res.status < 300 || res.status >= 400) return res;
+    const next = res.headers.get('Location');
+    if (!next) return res;
+    current = new URL(next, current).href;
+  }
+  throw new Error('Too many redirects');
 }
 
 function decodeEntities(s) {
@@ -196,7 +253,7 @@ async function searchWikipedia(query, lang) {
 // Clean page reader: fetches target URL, strips fluff, returns pure readable text
 async function extractPageText(url, maxChars = 5000) {
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: {
         'User-Agent': UA,
         'Accept': 'text/html,application/xhtml+xml',
@@ -233,12 +290,12 @@ export default {
       }
 
       const url = new URL(request.url);
-      const clientSecret = env.ROBIN_CLIENT_SECRET || DEFAULT_SECRET;
+      const clientSecret = env.ROBIN_CLIENT_SECRET || '';
       const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
 
       // 1. Health check (public, monitoring only)
       if (url.pathname === '/' || url.pathname === '/health') {
-        return new Response(JSON.stringify({ status: 'ok', service: 'robinhood-search', version: '1.2.0-secure' }), {
+        return new Response(JSON.stringify({ status: 'ok', service: 'robinthood-search', version: '1.3.0' }), {
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
         });
       }
@@ -397,8 +454,8 @@ export default {
         }
 
         const targetUrl = parsed.url;
-        const maxChars = parsed.maxChars || 5000;
-        if (!targetUrl || isUnsafeUrl(targetUrl)) {
+        const maxChars = Math.min(Math.max(parseInt(parsed.maxChars, 10) || 5000, 100), MAX_READ_CHARS);
+        if (typeof targetUrl !== 'string' || isUnsafeUrl(targetUrl)) {
           return new Response(JSON.stringify({ error: 'Invalid or restricted URL' }), {
             status: 400,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },

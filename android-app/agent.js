@@ -106,6 +106,19 @@ export function stepLabel(a) {
   return `Saving file: ${a.arg}`;
 }
 
+// Once web text is in the conversation, a page can try to steer the model, so file
+// actions and OPENs of URLs the user never saw need the user's tap. OPEN of a URL that
+// came from the user or a search result carries no data out, so it goes through.
+const URL_RE = /https?:\/\/[^\s<>"'`)\]]+/g;
+const urlsIn = (text) => (text.match(URL_RE) || []).map((u) => u.replace(/[.,;]+$/, ''));
+
+export function needsConfirm(action, taint) {
+  if (!taint.web) return false;
+  if (action.kind === 'SEARCH') return false;
+  if (action.kind === 'OPEN') return !taint.safeUrls.has(action.arg);
+  return true;
+}
+
 async function runAction(action, ctx) {
   switch (action.kind) {
     case 'SEARCH': {
@@ -174,6 +187,10 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
   const sources = [];
   const files = [];
   let usedId = state.order[0];
+  const taint = {
+    web: false,
+    safeUrls: new Set(history.filter((m) => m.role === 'user').flatMap((m) => urlsIn(String(m.content || '')))),
+  };
 
   for (let step = 0; step <= MAX_STEPS; step++) {
     const finalTurn = step === MAX_STEPS;
@@ -200,10 +217,22 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     onEvent({ type: 'step', label, steps: [...steps] });
     let result;
     try {
-      result = await runAction(action, ctx);
-      if (result.sources) sources.push(...result.sources);
-      if (result.file) files.push(result.file);
+      // No confirm handler means no tap is possible: refuse rather than run unchecked.
+      const allowed = !needsConfirm(action, taint) || (ctx.confirm ? await ctx.confirm(action) : false);
+      if (signal?.aborted) throw new Error('Stopped');
+      if (!allowed) {
+        result = { text: `The user declined ${action.kind}. Do not retry it; answer from what you have or ask the user.` };
+      } else {
+        result = await runAction(action, ctx);
+        if (result.sources) sources.push(...result.sources);
+        if (result.file) files.push(result.file);
+        if (action.kind === 'SEARCH' || action.kind === 'OPEN') {
+          taint.web = true;
+          if (action.kind === 'SEARCH') (result.sources || []).forEach((s) => taint.safeUrls.add(s.url));
+        }
+      }
     } catch (err) {
+      if (err.message === 'Stopped') throw err;
       result = { text: `${action.kind} failed: ${err.message}.` };
     }
     if (signal?.aborted) throw new Error('Stopped');
