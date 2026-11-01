@@ -2,7 +2,7 @@
   "expo": {
     "name": "RobinTHood",
     "slug": "robinthood",
-    "version": "0.7.2",
+    "version": "0.7.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.edotwedo.robinthood",
-      "versionCode": 11,
+      "versionCode": 12,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -23,6 +23,14 @@
       },
       "permissions": [
         "INTERNET"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "plugins": [

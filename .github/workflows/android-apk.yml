@@ -57,6 +57,17 @@ jobs:
           cp android/app/build/outputs/bundle/release/app-release.aab dist/RobinTHood-unsigned.aab
           sha256sum dist/*
 
+      # Fail the build if the Play app picks up permissions it must not have
+      # (libraries can add them silently through their own manifests).
+      - name: Check Play build permissions
+        run: |
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          perms=$("$AAPT" dump permissions dist/RobinTHood.apk)
+          echo "$perms"
+          for bad in RECORD_AUDIO SYSTEM_ALERT_WINDOW READ_EXTERNAL_STORAGE WRITE_EXTERNAL_STORAGE MANAGE_EXTERNAL_STORAGE FOREGROUND_SERVICE CAMERA ACCESS_FINE_LOCATION READ_CONTACTS; do
+            if echo "$perms" | grep -q "android.permission.$bad"; then echo "::error::Play build has $bad"; exit 1; fi
+          done
+
       # Phil's personal build: separate app (com.edotwedo.robinthood.phil) with
       # All files access. Never published publicly; it goes to a draft release below.
       - name: Build personal all-files APK
@@ -68,6 +79,10 @@ jobs:
           mkdir -p personal
           cp android/app/build/outputs/apk/release/app-release.apk personal/Robin-Phil-allfiles.apk
           sha256sum personal/*
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          perms=$("$AAPT" dump permissions personal/Robin-Phil-allfiles.apk); echo "$perms"
+          echo "$perms" | grep -q MANAGE_EXTERNAL_STORAGE || { echo "::error::personal build lacks All files access"; exit 1; }
+          if echo "$perms" | grep -qE "RECORD_AUDIO|SYSTEM_ALERT_WINDOW"; then echo "::error::personal build has mic/overlay"; exit 1; fi
 
       # Sign the Play bundle with the upload key, when the key is stored in repo secrets
       # (PLAY_UPLOAD_KEYSTORE_B64 and PLAY_UPLOAD_KEY_PASSWORD). Without them, the bundle

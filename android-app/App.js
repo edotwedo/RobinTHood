@@ -416,7 +416,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.7.2. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.7.3. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
