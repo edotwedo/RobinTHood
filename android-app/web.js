@@ -114,8 +114,25 @@ async function searchWikipedia(query, lang = 'en') {
   }));
 }
 
+const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
+
 // Pull readable text from a page, best effort.
 export async function pageText(url, maxChars = 2500) {
+  // 1. Try dedicated edge worker extraction first (strips tracking/scripts on edge, saves mobile bandwidth)
+  try {
+    const json = await withTimeout(async (signal) => {
+      const res = await fetch(`${SEARCH_SERVICE_URL}/read?url=${encodeURIComponent(url)}`, { signal });
+      if (!res.ok) throw new Error('Worker read failed');
+      return res.json();
+    }, 6000);
+    if (json?.ok && json.text) {
+      return json.text.slice(0, maxChars);
+    }
+  } catch {
+    // Continue to client-side fetch fallback
+  }
+
+  // 2. Direct client fetch fallback
   try {
     const html = await withTimeout(async (signal) => {
       const res = await fetch(url, { signal, headers: { 'User-Agent': UA, Accept: 'text/html' } });
@@ -138,6 +155,21 @@ export async function pageText(url, maxChars = 2500) {
 
 // Search only (no page reading); the model decides which pages to open.
 export async function searchWeb(query, lang = 'en') {
+  // 1. Try dedicated edge worker first (cached, multi-engine, bot-immune)
+  try {
+    const json = await withTimeout(async (signal) => {
+      const res = await fetch(`${SEARCH_SERVICE_URL}/search?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}`, { signal });
+      if (!res.ok) throw new Error('Worker search failed');
+      return res.json();
+    }, 6000);
+    if (json?.results?.length) {
+      return { source: json.source || 'Robin Search', results: json.results };
+    }
+  } catch {
+    // Continue to client-side fallback
+  }
+
+  // 2. Client-side fallback if worker is unreachable
   try {
     return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query, lang) };
   } catch {
