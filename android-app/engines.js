@@ -45,7 +45,21 @@ export function buildMessages(history, webContext) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   // One system message: some providers reject more than one.
   let system = `${SYSTEM_PROMPT} Today is ${today}.`;
-  if (webContext) system += `\n\n${webContext}`;
+  if (webContext) {
+    system +=
+      ' The RobinTHood app has live web search. When the latest user message includes ' +
+      '"LIVE WEB SEARCH RESULTS", the app searched the internet for it just now. Answer from ' +
+      'those results and cite them like [1]. Never say you cannot browse or access the internet: ' +
+      'the app did it for you.';
+    // Attach the results to the latest user turn: many models skim or ignore long system text.
+    const last = kept[kept.length - 1];
+    if (last && last.role === 'user') {
+      kept[kept.length - 1] = {
+        role: 'user',
+        content: `${last.content}\n\n---\nLIVE WEB SEARCH RESULTS (fetched by the app just now for this message):\n\n${webContext}`,
+      };
+    }
+  }
   return [{ role: 'system', content: system }, ...kept];
 }
 

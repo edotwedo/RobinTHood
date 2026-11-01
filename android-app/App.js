@@ -308,7 +308,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.6.0. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.6.1. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
