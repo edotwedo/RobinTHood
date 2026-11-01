@@ -2,8 +2,22 @@
 // Results (plus a little text from the top pages) are handed to the model
 // along with the user's message.
 import { fetch } from 'expo/fetch';
+import * as Crypto from 'expo-crypto';
 
 const UA = 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
+const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
+const CLIENT_SECRET = 'rth_live_sec_9f82a17cb6e4402eb06a287955c4df01';
+
+async function makeAuthHeaders(payloadString) {
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const toHash = `${ts}:${payloadString}:${CLIENT_SECRET}`;
+  const sig = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, toHash);
+  return {
+    'Content-Type': 'application/json',
+    'X-Robin-Timestamp': ts,
+    'X-Robin-Signature': sig,
+  };
+}
 
 function decodeEntities(s) {
   return s
@@ -114,15 +128,20 @@ async function searchWikipedia(query, lang = 'en') {
   }));
 }
 
-const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
-
 // Pull readable text from a page, best effort.
 export async function pageText(url, maxChars = 2500) {
-  // 1. Try dedicated edge worker extraction first (strips tracking/scripts on edge, saves mobile bandwidth)
+  // 1. Try dedicated edge worker extraction first (authenticated POST, strips tracking/scripts on edge)
   try {
+    const payload = JSON.stringify({ url, maxChars });
+    const headers = await makeAuthHeaders(payload);
     const json = await withTimeout(async (signal) => {
-      const res = await fetch(`${SEARCH_SERVICE_URL}/read?url=${encodeURIComponent(url)}`, { signal });
-      if (!res.ok) throw new Error('Worker read failed');
+      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal,
+      });
+      if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
       return res.json();
     }, 6000);
     if (json?.ok && json.text) {
@@ -155,11 +174,18 @@ export async function pageText(url, maxChars = 2500) {
 
 // Search only (no page reading); the model decides which pages to open.
 export async function searchWeb(query, lang = 'en') {
-  // 1. Try dedicated edge worker first (cached, multi-engine, bot-immune)
+  // 1. Try dedicated edge worker first (authenticated POST, edge-cached, bot-immune)
   try {
+    const payload = JSON.stringify({ query, lang });
+    const headers = await makeAuthHeaders(payload);
     const json = await withTimeout(async (signal) => {
-      const res = await fetch(`${SEARCH_SERVICE_URL}/search?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}`, { signal });
-      if (!res.ok) throw new Error('Worker search failed');
+      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/search`, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal,
+      });
+      if (!res.ok) throw new Error(`Worker search HTTP ${res.status}`);
       return res.json();
     }, 6000);
     if (json?.results?.length) {
