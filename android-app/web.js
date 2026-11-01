@@ -29,13 +29,25 @@ function realUrl(href) {
   return href;
 }
 
-async function searchDuckDuckGo(query) {
+const DDG_REGIONS = {
+  en: 'us-en',
+  es: 'es-es',
+  fr: 'fr-fr',
+  de: 'de-de',
+  pt: 'br-pt',
+  ja: 'jp-jp',
+  zh: 'cn-zh',
+  hi: 'in-en',
+};
+
+async function searchDuckDuckGo(query, lang = 'en') {
+  const kl = DDG_REGIONS[lang] || 'wt-wt';
   const html = await withTimeout(async (signal) => {
     const res = await fetch('https://html.duckduckgo.com/html/', {
       method: 'POST',
       signal,
       headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/html' },
-      body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
+      body: 'q=' + encodeURIComponent(query) + '&kl=' + kl,
     });
     if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
     return res.text();
@@ -57,13 +69,14 @@ async function searchDuckDuckGo(query) {
   return results;
 }
 
-async function searchDuckDuckGoLite(query) {
+async function searchDuckDuckGoLite(query, lang = 'en') {
+  const kl = DDG_REGIONS[lang] || 'wt-wt';
   const html = await withTimeout(async (signal) => {
     const res = await fetch('https://lite.duckduckgo.com/lite/', {
       method: 'POST',
       signal,
       headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/html' },
-      body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
+      body: 'q=' + encodeURIComponent(query) + '&kl=' + kl,
     });
     if (!res.ok) throw new Error(`DuckDuckGo Lite HTTP ${res.status}`);
     return res.text();
@@ -84,8 +97,9 @@ async function searchDuckDuckGoLite(query) {
   return results;
 }
 
-async function searchWikipedia(query) {
-  const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=' + encodeURIComponent(query);
+async function searchWikipedia(query, lang = 'en') {
+  const wikiLang = ['es', 'fr', 'de', 'pt', 'ja', 'zh', 'hi'].includes(lang) ? lang : 'en';
+  const url = `https://${wikiLang}.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=` + encodeURIComponent(query);
   const json = await withTimeout(async (signal) => {
     const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.7' } });
     if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
@@ -95,7 +109,7 @@ async function searchWikipedia(query) {
   if (!hits.length) throw new Error('Wikipedia returned no results');
   return hits.map((h) => ({
     title: h.title,
-    url: 'https://en.wikipedia.org/wiki/' + encodeURIComponent(h.title.replace(/ /g, '_')),
+    url: `https://${wikiLang}.wikipedia.org/wiki/` + encodeURIComponent(h.title.replace(/ /g, '_')),
     snippet: stripTags(h.snippet),
   }));
 }
@@ -123,14 +137,14 @@ export async function pageText(url, maxChars = 2500) {
 }
 
 // Search only (no page reading); the model decides which pages to open.
-export async function searchWeb(query) {
+export async function searchWeb(query, lang = 'en') {
   try {
-    return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query) };
+    return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query, lang) };
   } catch {
     try {
-      return { source: 'DuckDuckGo Lite', results: await searchDuckDuckGoLite(query) };
+      return { source: 'DuckDuckGo Lite', results: await searchDuckDuckGoLite(query, lang) };
     } catch {
-      return { source: 'Wikipedia', results: await searchWikipedia(query) };
+      return { source: 'Wikipedia', results: await searchWikipedia(query, lang) };
     }
   }
 }
@@ -147,17 +161,17 @@ export function searchQueryFrom(history) {
 }
 
 // Returns { query, results: [{title,url,snippet,text?}], source } or throws.
-export async function webSearch(query) {
+export async function webSearch(query, lang = 'en') {
   let results;
   let source = 'DuckDuckGo';
   try {
-    results = await searchDuckDuckGo(query);
+    results = await searchDuckDuckGo(query, lang);
   } catch {
     try {
-      results = await searchDuckDuckGoLite(query);
+      results = await searchDuckDuckGoLite(query, lang);
       source = 'DuckDuckGo Lite';
     } catch {
-      results = await searchWikipedia(query);
+      results = await searchWikipedia(query, lang);
       source = 'Wikipedia';
     }
   }

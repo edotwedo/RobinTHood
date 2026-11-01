@@ -12,6 +12,8 @@ import { actAndAnswer } from './agent';
 import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
 import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder } from './files';
+import { getDeviceLocale, t } from './i18n';
+import { AdBanner } from './AdBanner';
 
 // Phil's personal build (whole-phone file access) vs the Play Store build.
 const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
@@ -32,6 +34,8 @@ const DEFAULT_SETTINGS = {
   ollamaModel: '',
   openRouterKey: '',
   openRouterModel: '',
+  isPro: false,
+  lang: getDeviceLocale(),
 };
 
 const INTRO = {
@@ -185,6 +189,7 @@ function Chat() {
         ctx: {
           web: settings.webSearch,
           allFiles: ALL_FILES,
+          lang: settings.lang || 'en',
           getFolder: async () => {
             if (IS_IOS) return iosFolder();
             if (ALL_FILES) {
@@ -358,7 +363,10 @@ function Chat() {
       <StatusBar style="light" />
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>RobinTHood</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text style={styles.title}>{t('appTitle', settings.lang)}</Text>
+            {settings.isPro ? <Text style={styles.proBadge}>PRO</Text> : null}
+          </View>
           <Pressable onPress={() => setPicker(true)} hitSlop={8}>
             <Text style={styles.modelChip} numberOfLines={1}>{labelFor(settings.selectedModel, settings)} ▾</Text>
           </Pressable>
@@ -368,7 +376,7 @@ function Chat() {
           style={[styles.headerBtn, settings.webSearch && styles.webOn]}
           hitSlop={8}
         >
-          <Text style={[styles.headerBtnText, settings.webSearch && { color: '#fff' }]}>🌐 Web</Text>
+          <Text style={[styles.headerBtnText, settings.webSearch && { color: '#fff' }]}>{t('webBtn', settings.lang)}</Text>
         </Pressable>
         <Pressable
           onPress={() => setSettings((s) => ({ ...s, music: !s.music }))}
@@ -378,7 +386,7 @@ function Chat() {
           <Text style={[styles.headerBtnText, settings.music && { color: '#fff' }]}>{settings.music ? '♪' : '♪̸'}</Text>
         </Pressable>
         <Pressable onPress={newChat} style={styles.headerBtn} hitSlop={8}>
-          <Text style={styles.headerBtnText}>New</Text>
+          <Text style={styles.headerBtnText}>{t('newChat', settings.lang)}</Text>
         </Pressable>
         <Pressable onPress={() => setSettingsOpen(true)} style={styles.headerBtn} hitSlop={8}>
           <Text style={styles.gear}>⚙</Text>
@@ -400,7 +408,7 @@ function Chat() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="Message Robin"
+            placeholder={t('inputPlaceholder', settings.lang)}
             placeholderTextColor={C.faint}
             multiline
             onFocus={scrollToEnd}
@@ -415,6 +423,7 @@ function Chat() {
             </Pressable>
           )}
         </View>
+        <AdBanner isPro={settings.isPro} />
       </KeyboardAvoidingView>
 
       <Modal visible={!!reporting} transparent animationType="fade" onRequestClose={() => setReporting(null)}>
@@ -476,7 +485,51 @@ function Chat() {
         <View style={[styles.overlay, { paddingTop: insets.top + 20 }]}>
           <View style={styles.card}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.cardTitle}>Settings</Text>
+              <Text style={styles.cardTitle}>{t('settingsTitle', settings.lang)}</Text>
+
+              <Text style={styles.fieldLabel}>RobinTHood Pro</Text>
+              <Pressable
+                style={[styles.proCard, settings.isPro && styles.proCardActive]}
+                onPress={() => setSettings((s) => ({ ...s, isPro: !s.isPro }))}
+              >
+                <View style={styles.proCardHeader}>
+                  <Text style={styles.proCardTitle}>{settings.isPro ? '✨ Pro Unlocked' : '🚀 Upgrade to Pro'}</Text>
+                  <Text style={styles.proCardPrice}>{settings.isPro ? 'ACTIVE' : '$49.99'}</Text>
+                </View>
+                <Text style={styles.proCardDesc}>
+                  {settings.isPro
+                    ? 'Ad-free experience active. Unlimited live web searches and priority speed.'
+                    : 'Remove all ads forever, unlock unlimited fast web searches, and support RobinTHood.'}
+                </Text>
+                <View style={[styles.proCardAction, settings.isPro && { backgroundColor: '#065f46' }]}>
+                  <Text style={styles.proCardActionText}>
+                    {settings.isPro ? '✓ Pro Active (Tap to Toggle Test)' : 'Unlock Lifetime Pro ($49.99)'}
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Text style={styles.fieldLabel}>Language</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                {[
+                  ['en', 'English'],
+                  ['es', 'Español'],
+                  ['fr', 'Français'],
+                  ['de', 'Deutsch'],
+                  ['pt', 'Português'],
+                  ['ja', '日本語'],
+                  ['zh', '中文'],
+                  ['hi', 'हिन्दी'],
+                ].map(([code, label]) => (
+                  <Pressable
+                    key={code}
+                    style={[styles.pill, settings.lang === code && styles.optionActive, { marginRight: 6 }]}
+                    onPress={() => setSettings((s) => ({ ...s, lang: code }))}
+                  >
+                    <Text style={[styles.optionText, settings.lang === code && { color: '#fff', fontWeight: '700' }]}>{label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+
               <Field label="Home Ollama URL (optional)" value={settings.ollamaUrl} placeholder="http://my-pc.tailscale.net:11434"
                 onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))} />
               <Field label="Ollama model" value={settings.ollamaModel} placeholder="llama3.1"
@@ -648,4 +701,38 @@ const styles = StyleSheet.create({
   fieldInput: { backgroundColor: C.panel2, borderRadius: 8, padding: 10, color: '#f9fafb', fontSize: 14, borderWidth: 1, borderColor: C.border },
   closeBtn: { backgroundColor: C.green, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 20 },
   closeText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  proBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0b0f19',
+    backgroundColor: C.green,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+    overflow: 'hidden',
+  },
+  proCard: {
+    backgroundColor: C.panel2,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#374151',
+    marginBottom: 14,
+  },
+  proCardActive: {
+    borderColor: C.green,
+    backgroundColor: '#06281e',
+  },
+  proCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  proCardTitle: { fontSize: 15, fontWeight: '700', color: '#f3f4f6' },
+  proCardPrice: { fontSize: 13, fontWeight: '700', color: C.green },
+  proCardDesc: { fontSize: 12, color: C.dim, lineHeight: 16, marginBottom: 10 },
+  proCardAction: {
+    backgroundColor: C.green,
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  proCardActionText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

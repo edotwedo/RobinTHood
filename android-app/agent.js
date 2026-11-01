@@ -46,6 +46,7 @@ export function toolPrompt({ web, allFiles }) {
         'Write your own search queries and search again if results are weak. Mention which sites you used.\n'
       : 'Web access is switched off right now (the user can turn on the Web button).\n') +
     'When the user asks you to save, write, make or create a file, note, list or document, use WRITE; you do have access to their folder. ' +
+    'Always reply in the same language the user speaks (e.g. Spanish, French, German, Portuguese, Japanese, Chinese, Hindi, etc.). ' +
     'When you are done, answer normally with no action lines. Never claim you cannot access the internet' +
     (web ? '' : ' (just say Web is off)') + ' or the user\'s files.'
   );
@@ -108,7 +109,7 @@ async function runAction(action, ctx) {
   switch (action.kind) {
     case 'SEARCH': {
       if (!ctx.web) return { text: 'Web is switched off. Tell the user to tap the Web button if they want you to search.' };
-      const { source, results } = await searchWeb(action.arg);
+      const { source, results } = await searchWeb(action.arg, ctx.lang);
       const lines = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n');
       return { text: `Search results for "${action.arg}" (${source}):\n\n${lines}`, sources: results.map((r) => ({ title: r.title, url: r.url })) };
     }
