@@ -9,7 +9,7 @@
 //   WRITE: <file name>  (the file's contents follow on the next lines)
 import { buildMessages, engineOrder, labelFor, runEngine } from './engines';
 import { pageText, searchWeb } from './web';
-import { listFiles, readFile, writeFile } from './files';
+import { listAll, listFiles, readAll, readFile, writeAll, writeFile } from './files';
 
 const MAX_STEPS = 8;
 
@@ -23,10 +23,19 @@ const FILE_TOOLS =
   'WRITE: <file name>  -- create or overwrite a file there. Put the complete file contents on the lines after ' +
   'the WRITE line; everything after it is saved as the file. Use Markdown (.md) unless the user asks for another type.\n';
 
-export function toolPrompt({ web }) {
+const ALL_FILE_TOOLS =
+  'You have full access to the files on the user\'s phone (internal storage). Paths are relative to it, ' +
+  'like Documents/notes.md, Download/report.pdf.txt or Music.\n' +
+  'LIST FILES: <folder>  -- list a folder (leave the folder out for the top level). Folders end with /.\n' +
+  'READ: <path>  -- read a text file.\n' +
+  'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line; ' +
+  'everything after it is saved. A bare file name goes in Documents/RobinTHood/. Use Markdown (.md) unless asked otherwise. ' +
+  'Folders are created as needed. Only overwrite an existing file when the user asked you to change it.\n';
+
+export function toolPrompt({ web, allFiles }) {
   return (
     'You can take real actions through the RobinTHood app:\n' +
-    (web ? WEB_TOOLS : '') + FILE_TOOLS +
+    (web ? WEB_TOOLS : '') + (allFiles ? ALL_FILE_TOOLS : FILE_TOOLS) +
     'To take an action, reply with ONLY that action (the single line, plus the contents for WRITE) and nothing else. ' +
     'The app does it and sends you the result; then take another action or give your final answer. ' +
     `Up to ${MAX_STEPS} actions per message.\n` +
@@ -43,7 +52,7 @@ export function toolPrompt({ web }) {
 }
 
 const LINE_RE = /^\s*(?:\*\*)?(SEARCH|OPEN|READ|WRITE)(?:\*\*)?\s*:\s*(.+?)\s*$/im;
-const LIST_RE = /^\s*(?:\*\*)?LIST[ _]FILES(?:\*\*)?\s*:?\s*$/im;
+const LIST_RE = /^\s*(?:\*\*)?LIST[ _]FILES(?:\*\*)?\s*(?::\s*(.*?))?\s*$/im;
 
 const stripQuotes = (s) => s.replace(/^\*+\s*/, '').replace(/^[`"'<]+|[`"'>]+$/g, '').trim();
 
@@ -56,7 +65,7 @@ export function parseAction(text) {
   if (!m) return null;
   const before = text.slice(0, m.index).trim();
   if (before.length > 400) return null;
-  if (m === list) return { kind: 'LIST' };
+  if (m === list) return { kind: 'LIST', arg: stripQuotes(m[1] || '') };
   const kind = m[1].toUpperCase();
   let arg = stripQuotes(m[2]);
   if (kind === 'OPEN') {
@@ -90,7 +99,7 @@ const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, '')
 export function stepLabel(a) {
   if (a.kind === 'SEARCH') return `Searching: ${a.arg}`;
   if (a.kind === 'OPEN') return `Reading: ${host(a.arg)}`;
-  if (a.kind === 'LIST') return 'Looking at your files';
+  if (a.kind === 'LIST') return a.arg ? `Looking in: ${a.arg}` : 'Looking at your files';
   if (a.kind === 'READ') return `Opening file: ${a.arg}`;
   return `Saving file: ${a.arg}`;
 }
@@ -111,16 +120,22 @@ async function runAction(action, ctx) {
     }
     case 'LIST': {
       const dir = await ctx.getFolder();
+      if (ctx.allFiles) {
+        const names = await listAll(action.arg);
+        const where = action.arg || 'internal storage (top level)';
+        return { text: names.length ? `Contents of ${where}:\n${names.map((n) => `- ${n}`).join('\n')}` : `${where} is empty.` };
+      }
       const names = await listFiles(dir);
       return { text: names.length ? `Files in the RobinTHood folder:\n${names.map((n) => `- ${n}`).join('\n')}` : 'The RobinTHood folder is empty.' };
     }
     case 'READ': {
       const dir = await ctx.getFolder();
-      return { text: `Contents of ${action.arg}:\n\n${await readFile(dir, action.arg)}` };
+      const body = ctx.allFiles ? await readAll(action.arg) : await readFile(dir, action.arg);
+      return { text: `Contents of ${action.arg}:\n\n${body}` };
     }
     case 'WRITE': {
       const dir = await ctx.getFolder();
-      const saved = await writeFile(dir, action.arg, action.body);
+      const saved = ctx.allFiles ? await writeAll(action.arg, action.body) : await writeFile(dir, action.arg, action.body);
       return { text: `${saved.replaced ? 'Overwrote' : 'Created'} ${saved.name} (${saved.chars} characters) in the user's RobinTHood folder.`, file: saved.name };
     }
     default:
@@ -151,7 +166,7 @@ async function callModel(state, messages, onText, signal) {
 // onEvent({ type: 'model'|'step'|'text', ... }) keeps the screen updated.
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
-  const messages = buildMessages(history, null, toolPrompt({ web: ctx.web }));
+  const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
   const state = { settings, order: engineOrder(settings), engineIndex: 0 };
   const steps = [];
   const sources = [];
@@ -190,7 +205,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
       result = { text: `${action.kind} failed: ${err.message}.` };
     }
     if (signal?.aborted) throw new Error('Stopped');
-    const echo = action.kind === 'LIST' ? 'LIST FILES' : action.kind === 'WRITE'
+    const echo = action.kind === 'LIST' ? `LIST FILES${action.arg ? `: ${action.arg}` : ''}` : action.kind === 'WRITE'
       ? `WRITE: ${action.arg}\n${action.body.length > 1500 ? action.body.slice(0, 1500) + '\n[...]' : action.body}`
       : `${action.kind}: ${action.arg}`;
     messages.push({ role: 'assistant', content: echo });

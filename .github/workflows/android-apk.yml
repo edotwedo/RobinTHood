@@ -57,6 +57,18 @@ jobs:
           cp android/app/build/outputs/bundle/release/app-release.aab dist/RobinTHood-unsigned.aab
           sha256sum dist/*
 
+      # Phil's personal build: separate app (com.edotwedo.robinthood.phil) with
+      # All files access. Never published publicly; it goes to a draft release below.
+      - name: Build personal all-files APK
+        env:
+          ROBIN_ALL_FILES: '1'
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+          (cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon)
+          mkdir -p personal
+          cp android/app/build/outputs/apk/release/app-release.apk personal/Robin-Phil-allfiles.apk
+          sha256sum personal/*
+
       # Sign the Play bundle with the upload key, when the key is stored in repo secrets
       # (PLAY_UPLOAD_KEYSTORE_B64 and PLAY_UPLOAD_KEY_PASSWORD). Without them, the bundle
       # is published unsigned-for-Play and must be signed by hand with the upload key.
@@ -77,6 +89,19 @@ jobs:
         with:
           name: RobinTHood-android
           path: android-app/dist/*
+
+      # Draft releases are visible only to people with access to the repo.
+      - name: Publish personal build to a private draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete phil-personal --yes --cleanup-tag || true
+          gh release create phil-personal personal/Robin-Phil-allfiles.apk \
+            --draft \
+            --target "${{ github.sha }}" \
+            --title "Robin (Phil) personal build" \
+            --notes "Phil only. Separate app with All files access. Built from ${{ github.sha }}."
+
 
       # Fixed tag so the phone download link never changes. Marked prerelease so the
       # Windows app's /releases/latest update check never picks it up.

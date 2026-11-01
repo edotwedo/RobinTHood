@@ -9,7 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
-import { nameOf, pickFolder } from './files';
+import Constants from 'expo-constants';
+import { ALL_FILES_ROOT, hasAllFilesAccess, nameOf, openAllFilesSetting, pickFolder } from './files';
+
+// Phil's personal build (whole-phone file access) vs the Play Store build.
+const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
+const PACKAGE = Constants.expoConfig?.android?.package || 'com.edotwedo.robinthood';
 
 const KEYS = {
   settings: '@robinthood_settings_v2',
@@ -125,7 +130,14 @@ function Chat() {
         signal: ctrl.signal,
         ctx: {
           web: settings.webSearch,
+          allFiles: ALL_FILES,
           getFolder: async () => {
+            if (ALL_FILES) {
+              if (await hasAllFilesAccess()) return ALL_FILES_ROOT;
+              setStatus('Turn on All files access for Robin, then ask again…');
+              await openAllFilesSetting(PACKAGE);
+              throw new Error('All files access is off. Switch it on in the screen that just opened, come back, and ask again');
+            }
             if (settingsRef.current.filesUri) return settingsRef.current.filesUri;
             setStatus('Pick a folder for Robin\'s files…');
             const uri = await pickFolder();
@@ -311,12 +323,24 @@ function Chat() {
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))} />
               <Field label="OpenRouter model" value={settings.openRouterModel} placeholder="openrouter/free"
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))} />
-              <Text style={styles.fieldLabel}>Robin's folder (files Robin can read and write)</Text>
-              <Pressable style={styles.pill} onPress={async () => {
-                try { const uri = await pickFolder(); setSettings((s) => ({ ...s, filesUri: uri })); } catch {}
-              }}>
-                <Text style={styles.optionText}>{settings.filesUri ? `📁 ${nameOf(settings.filesUri) || 'Chosen folder'}  (tap to change)` : '📁 Choose a folder'}</Text>
-              </Pressable>
+              {ALL_FILES ? (
+                <>
+                  <Text style={styles.fieldLabel}>Files: whole phone (personal build)</Text>
+                  <Pressable style={styles.pill} onPress={() => openAllFilesSetting(PACKAGE).catch(() => {})}>
+                    <Text style={styles.optionText}>📂 All files access: open the switch</Text>
+                  </Pressable>
+                  <Text style={styles.hint}>New files without a folder go to Documents/RobinTHood.</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.fieldLabel}>Robin's folder (files Robin can read and write)</Text>
+                  <Pressable style={styles.pill} onPress={async () => {
+                    try { const uri = await pickFolder(); setSettings((s) => ({ ...s, filesUri: uri })); } catch {}
+                  }}>
+                    <Text style={styles.optionText}>{settings.filesUri ? `📁 ${nameOf(settings.filesUri) || 'Chosen folder'}  (tap to change)` : '📁 Choose a folder'}</Text>
+                  </Pressable>
+                </>
+              )}
               <Text style={styles.fieldLabel}>Music volume</Text>
               <View style={styles.pillRow}>
                 {[['Quiet', 0.15], ['Normal', 0.3], ['Loud', 0.6]].map(([name, v]) => (
@@ -326,7 +350,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.7.0. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.7.1. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
