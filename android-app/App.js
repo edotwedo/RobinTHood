@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -50,6 +50,53 @@ const C = {
 let idCounter = 0;
 const newId = () => `${Date.now()}-${idCounter++}`;
 
+function FormattedMessage({ text }) {
+  if (!text) return null;
+  const parts = [];
+  const regex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'code', lang: match[1] || 'code', content: match[2].trimEnd() });
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
+  if (parts.length === 1 && parts[0].type === 'text') {
+    return <Text selectable style={styles.msgText}>{text}</Text>;
+  }
+
+  return (
+    <View style={styles.formattedContainer}>
+      {parts.map((p, idx) => {
+        if (p.type === 'code') {
+          return (
+            <View key={idx} style={styles.codeBlock}>
+              <View style={styles.codeHeader}>
+                <Text style={styles.codeLang}>{p.lang}</Text>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <Text selectable style={styles.codeText}>{p.content}</Text>
+              </ScrollView>
+            </View>
+          );
+        }
+        return (
+          <Text key={idx} selectable style={styles.msgText}>
+            {p.content}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
 function Chat() {
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -57,6 +104,7 @@ function Chat() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [expandedSteps, setExpandedSteps] = useState({});
   const [picker, setPicker] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -212,8 +260,11 @@ function Chat() {
     setReportDone(outcome === 'sent' ? 'Thanks. Your report was sent.' : 'Thanks. Your report is saved and will be sent when the connection is back.');
   };
 
+  const toggleSteps = (id) => setExpandedSteps((prev) => ({ ...prev, [id]: !prev[id] }));
+
   const renderItem = ({ item }) => {
     const mine = item.role === 'user';
+    const isExpanded = expandedSteps[item.id];
     return (
       <View style={[styles.msg, mine ? styles.userMsg : styles.botMsg]}>
         {!mine && (
@@ -228,14 +279,43 @@ function Chat() {
           </View>
         )}
         {item.steps?.length ? (
-          <View style={styles.steps}>
-            {item.steps.map((st, i) => (
-              <Text key={i} style={styles.step} numberOfLines={1}>{st.startsWith('Searching') ? '🔎 ' : st.startsWith('Reading') ? '📄 ' : st.startsWith('Saving') ? '💾 ' : '📁 '}{st}</Text>
-            ))}
+          <View style={styles.stepsContainer}>
+            {item.pending ? (
+              <View style={styles.stepsList}>
+                {item.steps.map((st, i) => (
+                  <Text key={i} style={styles.step} numberOfLines={1}>
+                    {st.startsWith('Searching') ? '🔎 ' : st.startsWith('Reading') ? '📄 ' : st.startsWith('Saving') ? '💾 ' : '📁 '}
+                    {st}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <>
+                <Pressable
+                  style={styles.stepsToggle}
+                  onPress={() => toggleSteps(item.id)}
+                  hitSlop={6}
+                >
+                  <Text style={styles.stepsToggleText}>
+                    {isExpanded ? '▾' : '▸'} {item.steps.length} research {item.steps.length === 1 ? 'step' : 'steps'}
+                  </Text>
+                </Pressable>
+                {isExpanded ? (
+                  <View style={styles.stepsList}>
+                    {item.steps.map((st, i) => (
+                      <Text key={i} style={styles.step} numberOfLines={1}>
+                        {st.startsWith('Searching') ? '🔎 ' : st.startsWith('Reading') ? '📄 ' : st.startsWith('Saving') ? '💾 ' : '📁 '}
+                        {st}
+                      </Text>
+                    ))}
+                  </View>
+                ) : null}
+              </>
+            )}
           </View>
         ) : null}
         {item.content ? (
-          <Text selectable style={styles.msgText}>{item.content}</Text>
+          <FormattedMessage text={item.content} />
         ) : (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color={C.green} />
@@ -243,12 +323,27 @@ function Chat() {
           </View>
         )}
         {item.sources?.length ? (
-          <View style={styles.sources}>
-            {item.sources.map((src, i) => (
-              <Text key={src.url} style={styles.source} numberOfLines={1} onPress={() => Linking.openURL(src.url)}>
-                {src.opened ? '📄' : '🔗'} {src.title}
-              </Text>
-            ))}
+          <View style={styles.sourcesContainer}>
+            <Text style={styles.sourcesHeader}>SOURCES</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourcesScroll}>
+              {item.sources.map((src, i) => {
+                let domain = '';
+                try { domain = new URL(src.url).hostname.replace(/^www\./, ''); } catch { domain = 'web'; }
+                return (
+                  <Pressable
+                    key={src.url || i}
+                    style={[styles.sourceCard, src.opened && styles.sourceCardOpened]}
+                    onPress={() => Linking.openURL(src.url)}
+                  >
+                    <View style={styles.sourceCardHeader}>
+                      <Text style={styles.sourceBadge}>{src.opened ? '📄 READ' : '🔗 LINK'}</Text>
+                      <Text style={styles.sourceDomain} numberOfLines={1}>{domain}</Text>
+                    </View>
+                    <Text style={styles.sourceTitle} numberOfLines={2}>{src.title}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         ) : null}
         {item.note ? <Text style={styles.note}>{item.note}</Text> : null}
@@ -485,8 +580,56 @@ const styles = StyleSheet.create({
   pill: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, backgroundColor: C.panel2 },
   steps: { marginBottom: 8 },
   step: { color: C.faint, fontSize: 12, marginBottom: 2 },
+  stepsContainer: { marginBottom: 8 },
+  stepsToggle: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 9, borderRadius: 6, backgroundColor: C.panel2, marginBottom: 4, borderWidth: 1, borderColor: C.border },
+  stepsToggleText: { fontSize: 11, color: C.dim, fontWeight: '600' },
+  stepsList: { paddingLeft: 4, marginTop: 4, marginBottom: 4 },
   sources: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
   source: { color: '#60a5fa', fontSize: 12, marginTop: 3 },
+  sourcesContainer: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
+  sourcesHeader: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8, marginBottom: 6 },
+  sourcesScroll: { flexDirection: 'row', paddingBottom: 4 },
+  sourceCard: {
+    backgroundColor: C.panel2,
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+    width: 150,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  sourceCardOpened: {
+    borderColor: C.green,
+    backgroundColor: '#06281e',
+  },
+  sourceCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  sourceBadge: { fontSize: 9, fontWeight: '700', color: C.green },
+  sourceDomain: { fontSize: 10, color: C.faint, flex: 1, textAlign: 'right', marginLeft: 4 },
+  sourceTitle: { fontSize: 11, color: '#93c5fd', lineHeight: 15 },
+  formattedContainer: { gap: 6 },
+  codeBlock: {
+    backgroundColor: '#060913',
+    borderRadius: 8,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    overflow: 'hidden',
+  },
+  codeHeader: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  codeLang: { color: C.faint, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  codeText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    padding: 10,
+    lineHeight: 18,
+  },
   note: { color: C.faint, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   loadingText: { color: C.dim, fontSize: 12, marginLeft: 8 },

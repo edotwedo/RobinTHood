@@ -57,6 +57,33 @@ async function searchDuckDuckGo(query) {
   return results;
 }
 
+async function searchDuckDuckGoLite(query) {
+  const html = await withTimeout(async (signal) => {
+    const res = await fetch('https://lite.duckduckgo.com/lite/', {
+      method: 'POST',
+      signal,
+      headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/html' },
+      body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
+    });
+    if (!res.ok) throw new Error(`DuckDuckGo Lite HTTP ${res.status}`);
+    return res.text();
+  }, 10000);
+
+  const results = [];
+  const linkMatches = [...html.matchAll(/<a rel="nofollow" href="([^"]+)" class='result-link'>([\s\S]*?)<\/a>/g)];
+  const snipMatches = [...html.matchAll(/<td class='result-snippet'>([\s\S]*?)<\/td>/g)];
+  for (let i = 0; i < linkMatches.length; i++) {
+    const url = realUrl(decodeEntities(linkMatches[i][1]));
+    if (!/^https?:\/\//.test(url) || url.includes('duckduckgo.com/y.js')) continue;
+    const title = stripTags(linkMatches[i][2]);
+    const snippet = snipMatches[i] ? stripTags(snipMatches[i][1]) : '';
+    results.push({ title, url, snippet });
+    if (results.length >= 6) break;
+  }
+  if (!results.length) throw new Error('DuckDuckGo Lite returned no results');
+  return results;
+}
+
 async function searchWikipedia(query) {
   const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=' + encodeURIComponent(query);
   const json = await withTimeout(async (signal) => {
@@ -100,7 +127,11 @@ export async function searchWeb(query) {
   try {
     return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query) };
   } catch {
-    return { source: 'Wikipedia', results: await searchWikipedia(query) };
+    try {
+      return { source: 'DuckDuckGo Lite', results: await searchDuckDuckGoLite(query) };
+    } catch {
+      return { source: 'Wikipedia', results: await searchWikipedia(query) };
+    }
   }
 }
 
@@ -122,8 +153,13 @@ export async function webSearch(query) {
   try {
     results = await searchDuckDuckGo(query);
   } catch {
-    results = await searchWikipedia(query);
-    source = 'Wikipedia';
+    try {
+      results = await searchDuckDuckGoLite(query);
+      source = 'DuckDuckGo Lite';
+    } catch {
+      results = await searchWikipedia(query);
+      source = 'Wikipedia';
+    }
   }
   // Read the top two pages for more than a one-line snippet.
   const texts = await Promise.all(results.slice(0, 2).map((r) => pageText(r.url)));
