@@ -14,6 +14,7 @@ import Constants from 'expo-constants';
 import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder } from './files';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner } from './AdBanner';
+import { parseBlocks, parseInline } from './markdown';
 
 // Phil's personal build (whole-phone file access) vs the Play Store build.
 const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
@@ -54,48 +55,89 @@ const C = {
 let idCounter = 0;
 const newId = () => `${Date.now()}-${idCounter++}`;
 
+function openLink(url) {
+  if (/^https?:\/\//i.test(url)) Linking.openURL(url).catch(() => {});
+}
+
+// Inline spans from markdown.js as nested Text, so bold, links etc. wrap with the line.
+function Inline({ text, style }) {
+  return (
+    <Text selectable style={style}>
+      {parseInline(text).map((s, i) => (
+        <Text
+          key={i}
+          style={[
+            s.bold && styles.mdBold,
+            s.italic && styles.mdItalic,
+            s.strike && styles.mdStrike,
+            s.code && styles.mdInlineCode,
+            s.url && styles.mdLink,
+          ]}
+          onPress={s.url ? () => openLink(s.url) : undefined}
+        >
+          {s.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+const HEADING_STYLES = [null, 'mdH1', 'mdH2', 'mdH3', 'mdH4', 'mdH4', 'mdH4'];
+
 function FormattedMessage({ text }) {
   if (!text) return null;
-  const parts = [];
-  const regex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
-    }
-    parts.push({ type: 'code', lang: match[1] || 'code', content: match[2].trimEnd() });
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push({ type: 'text', content: text.slice(lastIndex) });
-  }
-
-  if (parts.length === 1 && parts[0].type === 'text') {
-    return <Text selectable style={styles.msgText}>{text}</Text>;
-  }
-
+  const blocks = parseBlocks(text);
   return (
     <View style={styles.formattedContainer}>
-      {parts.map((p, idx) => {
-        if (p.type === 'code') {
-          return (
-            <View key={idx} style={styles.codeBlock}>
-              <View style={styles.codeHeader}>
-                <Text style={styles.codeLang}>{p.lang}</Text>
+      {blocks.map((b, idx) => {
+        switch (b.type) {
+          case 'code':
+            return (
+              <View key={idx} style={styles.codeBlock}>
+                <View style={styles.codeHeader}>
+                  <Text style={styles.codeLang}>{b.lang || 'code'}</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
+                  <Text selectable style={styles.codeText}>{b.text}</Text>
+                </ScrollView>
               </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <Text selectable style={styles.codeText}>{p.content}</Text>
+            );
+          case 'heading':
+            return <Inline key={idx} text={b.text} style={[styles.msgText, styles[HEADING_STYLES[b.level]]]} />;
+          case 'hr':
+            return <View key={idx} style={styles.mdHr} />;
+          case 'quote':
+            return (
+              <View key={idx} style={styles.mdQuote}>
+                <Inline text={b.text} style={[styles.msgText, styles.mdQuoteText]} />
+              </View>
+            );
+          case 'item':
+            return (
+              <View key={idx} style={[styles.mdItem, { paddingLeft: 4 + b.depth * 16 }]}>
+                <Text style={[styles.msgText, styles.mdMarker]}>{b.ordered ? `${b.number}.` : b.depth ? '◦' : '•'}</Text>
+                <Inline text={b.text} style={[styles.msgText, styles.mdItemText]} />
+              </View>
+            );
+          case 'table':
+            return (
+              <ScrollView key={idx} horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
+                <View style={styles.mdTable}>
+                  {[b.header, ...b.rows].map((row, r) => (
+                    <View key={r} style={[styles.mdRow, r === 0 && styles.mdHeadRow]}>
+                      {row.map((cell, c) => (
+                        <View key={c} style={styles.mdCell}>
+                          <Inline text={cell} style={[styles.mdCellText, r === 0 && styles.mdBold]} />
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+                </View>
               </ScrollView>
-            </View>
-          );
+            );
+          default:
+            return <Inline key={idx} text={b.text} style={styles.msgText} />;
         }
-        return (
-          <Text key={idx} selectable style={styles.msgText}>
-            {p.content}
-          </Text>
-        );
       })}
     </View>
   );
@@ -367,7 +409,12 @@ function Chat() {
         {item.sources?.length ? (
           <View style={styles.sourcesContainer}>
             <Text style={styles.sourcesHeader}>SOURCES</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sourcesScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.sourcesScroll}
+              contentContainerStyle={styles.sourcesRow}
+            >
               {item.sources.map((src, i) => {
                 let domain = '';
                 try { domain = new URL(src.url).hostname.replace(/^www\./, ''); } catch { domain = 'web'; }
@@ -607,7 +654,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.5. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.6. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
               <Pressable
                 style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
                 onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
@@ -686,13 +733,17 @@ const styles = StyleSheet.create({
   source: { color: '#60a5fa', fontSize: 12, marginTop: 3 },
   sourcesContainer: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
   sourcesHeader: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8, marginBottom: 6 },
-  sourcesScroll: { flexDirection: 'row', paddingBottom: 4 },
+  // A horizontal ScrollView defaults to flexGrow: 1; inside a list cell on Android that
+  // stretched the row, and every card in it, to many screens tall. Keep it content-sized.
+  sourcesScroll: { flexGrow: 0, flexShrink: 0 },
+  sourcesRow: { flexDirection: 'row', alignItems: 'flex-start', paddingBottom: 4 },
   sourceCard: {
     backgroundColor: C.panel2,
     borderRadius: 8,
     padding: 8,
     marginRight: 8,
     width: 150,
+    maxHeight: 90,
     borderWidth: 1,
     borderColor: C.border,
   },
@@ -705,6 +756,27 @@ const styles = StyleSheet.create({
   sourceDomain: { fontSize: 10, color: C.faint, flex: 1, textAlign: 'right', marginLeft: 4 },
   sourceTitle: { fontSize: 11, color: '#93c5fd', lineHeight: 15 },
   formattedContainer: { gap: 6 },
+  hScroll: { flexGrow: 0, flexShrink: 0 },
+  mdBold: { fontWeight: '700' },
+  mdItalic: { fontStyle: 'italic' },
+  mdStrike: { textDecorationLine: 'line-through' },
+  mdInlineCode: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', backgroundColor: '#060913', color: '#e2e8f0', fontSize: 13 },
+  mdLink: { color: '#60a5fa', textDecorationLine: 'underline' },
+  mdH1: { fontSize: 21, lineHeight: 28, fontWeight: '800', marginTop: 4 },
+  mdH2: { fontSize: 18, lineHeight: 25, fontWeight: '700', marginTop: 4 },
+  mdH3: { fontSize: 16, lineHeight: 23, fontWeight: '700', marginTop: 2 },
+  mdH4: { fontSize: 15, fontWeight: '700' },
+  mdHr: { height: 1, backgroundColor: C.border, marginVertical: 6 },
+  mdQuote: { borderLeftWidth: 3, borderLeftColor: C.border, paddingLeft: 10 },
+  mdQuoteText: { color: C.dim },
+  mdItem: { flexDirection: 'row', alignItems: 'flex-start' },
+  mdMarker: { width: 22, color: C.dim },
+  mdItemText: { flex: 1 },
+  mdTable: { borderWidth: 1, borderColor: C.border, borderRadius: 6, overflow: 'hidden' },
+  mdRow: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.border },
+  mdHeadRow: { backgroundColor: C.panel2, borderTopWidth: 0 },
+  mdCell: { width: 140, padding: 8, borderLeftWidth: 1, borderLeftColor: C.line },
+  mdCellText: { color: C.text, fontSize: 13, lineHeight: 18 },
   codeBlock: {
     backgroundColor: '#060913',
     borderRadius: 8,
