@@ -60,7 +60,7 @@ async function searchDuckDuckGo(query) {
 async function searchWikipedia(query) {
   const url = 'https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=4&srsearch=' + encodeURIComponent(query);
   const json = await withTimeout(async (signal) => {
-    const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.6' } });
+    const res = await fetch(url, { signal, headers: { 'User-Agent': 'RobinTHood-Android/0.7' } });
     if (!res.ok) throw new Error(`Wikipedia HTTP ${res.status}`);
     return res.json();
   }, 8000);
@@ -74,7 +74,7 @@ async function searchWikipedia(query) {
 }
 
 // Pull readable text from a page, best effort.
-async function pageText(url, maxChars = 2500) {
+export async function pageText(url, maxChars = 2500) {
   try {
     const html = await withTimeout(async (signal) => {
       const res = await fetch(url, { signal, headers: { 'User-Agent': UA, Accept: 'text/html' } });
@@ -92,6 +92,15 @@ async function pageText(url, maxChars = 2500) {
     return text.length > 200 ? text.slice(0, maxChars) : '';
   } catch {
     return '';
+  }
+}
+
+// Search only (no page reading); the model decides which pages to open.
+export async function searchWeb(query) {
+  try {
+    return { source: 'DuckDuckGo', results: await searchDuckDuckGo(query) };
+  } catch {
+    return { source: 'Wikipedia', results: await searchWikipedia(query) };
   }
 }
 

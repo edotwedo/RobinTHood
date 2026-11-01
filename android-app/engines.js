@@ -29,7 +29,7 @@ export const SYSTEM_PROMPT =
 // Keep the request a sensible size: newest turns first, up to a character budget.
 const HISTORY_CHAR_BUDGET = 24000;
 
-export function buildMessages(history, webContext) {
+export function buildMessages(history, _unused, extraSystem) {
   const turns = history
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.error && !m.intro)
     .map((m) => ({ role: m.role, content: m.content }));
@@ -45,21 +45,7 @@ export function buildMessages(history, webContext) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   // One system message: some providers reject more than one.
   let system = `${SYSTEM_PROMPT} Today is ${today}.`;
-  if (webContext) {
-    system +=
-      ' The RobinTHood app has live web search. When the latest user message includes ' +
-      '"LIVE WEB SEARCH RESULTS", the app searched the internet for it just now. Answer from ' +
-      'those results and cite them like [1]. Never say you cannot browse or access the internet: ' +
-      'the app did it for you.';
-    // Attach the results to the latest user turn: many models skim or ignore long system text.
-    const last = kept[kept.length - 1];
-    if (last && last.role === 'user') {
-      kept[kept.length - 1] = {
-        role: 'user',
-        content: `${last.content}\n\n---\nLIVE WEB SEARCH RESULTS (fetched by the app just now for this message):\n\n${webContext}`,
-      };
-    }
-  }
+  if (extraSystem) system += `\n\n${extraSystem}`;
   return [{ role: 'system', content: system }, ...kept];
 }
 
@@ -111,7 +97,7 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, signal, fi
       method: 'POST',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'RobinTHood-Android/0.6',
+        'User-Agent': 'RobinTHood-Android/0.7',
         Accept: 'text/event-stream',
         'Content-Type': 'application/json',
         ...headers,
@@ -174,7 +160,7 @@ export function availableModels(settings) {
   return list;
 }
 
-function runEngine(id, settings, messages, onChunk, signal) {
+export function runEngine(id, settings, messages, onChunk, signal) {
   if (id === 'ollama') {
     return streamOllama({ baseUrl: settings.ollamaUrl, model: settings.ollamaModel, messages, onChunk, signal });
   }
@@ -200,15 +186,21 @@ export function labelFor(id, settings) {
 }
 
 // Try the chosen model; if it fails, fall through the rest of the cascade.
-export async function complete({ history, settings, onChunk, signal, webContext }) {
-  const messages = buildMessages(history, webContext);
+// Chosen model first, then the free cascade.
+export function engineOrder(settings) {
   const chosen = settings.selectedModel || 'auto';
   const cascade = [];
   if (chosen !== 'auto') cascade.push(chosen);
   if (settings.ollamaUrl) cascade.push('ollama');
   for (const e of KEYLESS_ENGINES) cascade.push(e.id);
   if (settings.openRouterKey) cascade.push('openrouter');
-  const order = [...new Set(cascade)];
+  return [...new Set(cascade)];
+}
+
+export async function complete({ history, settings, onChunk, signal }) {
+  const messages = buildMessages(history);
+  const chosen = settings.selectedModel || 'auto';
+  const order = engineOrder(settings);
 
   const errors = [];
   for (const id of order) {

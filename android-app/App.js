@@ -7,8 +7,9 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { KeyboardAvoidingView, KeyboardProvider } from 'react-native-keyboard-controller';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
-import { availableModels, complete, labelFor } from './engines';
-import { formatForModel, searchQueryFrom, webSearch } from './web';
+import { availableModels, labelFor } from './engines';
+import { actAndAnswer } from './agent';
+import { nameOf, pickFolder } from './files';
 
 const KEYS = {
   settings: '@robinthood_settings_v2',
@@ -20,6 +21,7 @@ const DEFAULT_SETTINGS = {
   webSearch: true,
   music: true,
   musicVolume: 0.3,
+  filesUri: '',
   ollamaUrl: '',
   ollamaModel: '',
   openRouterKey: '',
@@ -30,7 +32,7 @@ const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet for current info. ♪ turns the music on or off.',
+  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
   model: 'RobinTHood',
 };
 
@@ -53,6 +55,8 @@ function Chat() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const listRef = useRef(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const theme = useAudioPlayer(require('./assets/theme.m4a'));
 
   // Background theme: loops while the app is open, mixes with other audio,
@@ -113,28 +117,27 @@ function Chat() {
     const update = (patch) => setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, ...patch } : m)));
 
     try {
-      let webContext;
-      let sources;
-      if (settings.webSearch) {
-        setStatus('Searching the web…');
-        try {
-          const web = await webSearch(searchQueryFrom(history));
-          webContext = formatForModel(web);
-          sources = web.results.map((r) => ({ title: r.title, url: r.url }));
-          update({ sources });
-        } catch (e) {
-          update({ note: `Web search failed (${e.message}); answering without it.` });
-        }
-        if (ctrl.signal.aborted) throw new Error('Stopped');
-      }
-      const result = await complete({
+      // Robin acts for itself: web search and page reading (when Web is on) and
+      // its folder of files on the phone (always).
+      const result = await actAndAnswer({
         history,
         settings,
-        webContext,
         signal: ctrl.signal,
-        onChunk: (partial, engineId) => {
-          setStatus(`Asking ${labelFor(engineId, settings)}…`);
-          update({ content: partial, model: labelFor(engineId, settings) });
+        ctx: {
+          web: settings.webSearch,
+          getFolder: async () => {
+            if (settingsRef.current.filesUri) return settingsRef.current.filesUri;
+            setStatus('Pick a folder for Robin\'s files…');
+            const uri = await pickFolder();
+            setSettings((s) => ({ ...s, filesUri: uri }));
+            settingsRef.current = { ...settingsRef.current, filesUri: uri };
+            return uri;
+          },
+        },
+        onEvent: (ev) => {
+          if (ev.type === 'text') { setStatus(`Asking ${ev.model}…`); update({ content: ev.text, model: ev.model }); }
+          if (ev.type === 'step') { setStatus(ev.label + '…'); update({ steps: ev.steps, content: '' }); }
+          if (ev.type === 'model') update({ model: ev.model });
         },
       });
       if (result.ok) {
@@ -142,6 +145,8 @@ function Chat() {
           content: result.text,
           model: result.model,
           seconds: result.seconds,
+          sources: result.sources,
+          steps: result.steps,
           note: result.fellBack ? `${labelFor(settings.selectedModel, settings)} failed, used ${result.model}` : undefined,
           pending: false,
         });
@@ -175,6 +180,13 @@ function Chat() {
             {item.seconds ? <Text style={styles.latency}>{item.seconds.toFixed(1)}s</Text> : null}
           </View>
         )}
+        {item.steps?.length ? (
+          <View style={styles.steps}>
+            {item.steps.map((st, i) => (
+              <Text key={i} style={styles.step} numberOfLines={1}>{st.startsWith('Searching') ? '🔎 ' : st.startsWith('Reading') ? '📄 ' : st.startsWith('Saving') ? '💾 ' : '📁 '}{st}</Text>
+            ))}
+          </View>
+        ) : null}
         {item.content ? (
           <Text selectable style={styles.msgText}>{item.content}</Text>
         ) : (
@@ -187,7 +199,7 @@ function Chat() {
           <View style={styles.sources}>
             {item.sources.map((src, i) => (
               <Text key={src.url} style={styles.source} numberOfLines={1} onPress={() => Linking.openURL(src.url)}>
-                [{i + 1}] {src.title}
+                {src.opened ? '📄' : '🔗'} {src.title}
               </Text>
             ))}
           </View>
@@ -299,6 +311,12 @@ function Chat() {
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))} />
               <Field label="OpenRouter model" value={settings.openRouterModel} placeholder="openrouter/free"
                 onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))} />
+              <Text style={styles.fieldLabel}>Robin's folder (files Robin can read and write)</Text>
+              <Pressable style={styles.pill} onPress={async () => {
+                try { const uri = await pickFolder(); setSettings((s) => ({ ...s, filesUri: uri })); } catch {}
+              }}>
+                <Text style={styles.optionText}>{settings.filesUri ? `📁 ${nameOf(settings.filesUri) || 'Chosen folder'}  (tap to change)` : '📁 Choose a folder'}</Text>
+              </Pressable>
               <Text style={styles.fieldLabel}>Music volume</Text>
               <View style={styles.pillRow}>
                 {[['Quiet', 0.15], ['Normal', 0.3], ['Loud', 0.6]].map(([name, v]) => (
@@ -308,7 +326,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood Android 0.6.1. Web search uses DuckDuckGo (Wikipedia as backup), no account needed. Your chats and keys stay on this phone.</Text>
+              <Text style={styles.hint}>RobinTHood Android 0.7.0. Robin searches the web itself (DuckDuckGo, Wikipedia backup) and can create, read and list files in the folder you choose. No account needed. Your chats and keys stay on this phone.</Text>
               <Pressable style={styles.closeBtn} onPress={() => setSettingsOpen(false)}>
                 <Text style={styles.closeText}>Done</Text>
               </Pressable>
@@ -367,6 +385,8 @@ const styles = StyleSheet.create({
   webOn: { backgroundColor: '#065f46' },
   pillRow: { flexDirection: 'row', gap: 8 },
   pill: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, backgroundColor: C.panel2 },
+  steps: { marginBottom: 8 },
+  step: { color: C.faint, fontSize: 12, marginBottom: 2 },
   sources: { marginTop: 10, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
   source: { color: '#60a5fa', fontSize: 12, marginTop: 3 },
   note: { color: C.faint, fontSize: 11, marginTop: 8, fontStyle: 'italic' },

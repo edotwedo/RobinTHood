@@ -17,6 +17,7 @@ Rebuilt Oct 31, 2026 from the installed v0.2.1 APK, because the original Android
 The Pro / Google Play purchase from v0.2.1 is not included; it was never live in the Play Store.
 
 - **0.6.0: background music.** An original chiptune loop (`assets/theme.m4a`, made by `music/compose.py`) plays while the app is open and stops when you leave it. The ♪ button turns it on or off; Settings has Quiet/Normal/Loud. It mixes with other audio.
+- **0.7.0: Robin acts for itself.** It decides when to search the web and which pages to open, then keeps going until it can answer; you see each step (🔎 search, 📄 reading). It can also list, read and write files (Markdown by default) in a folder you pick on the phone, which you can see in your Files app. Plain-text actions (`SEARCH:`, `OPEN:`, `LIST FILES`, `READ:`, `WRITE:`) work with any model; the loop is in `agent.js`, and the folder access is in `files.js`.
 - The Play bundle (`.aab`) is built too. Privacy policy: https://edotwedo.github.io/RobinTHood/privacy-android.html
 
 ## Build
