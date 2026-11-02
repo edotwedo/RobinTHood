@@ -3,6 +3,7 @@
 // if it can't be reached, they wait on the phone and are sent on a later launch.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetch } from 'expo/fetch';
+import { makeAuthHeaders } from './web';
 
 export const REPORT_URL = 'https://robinthood-reports.phone-liaison.workers.dev/report';
 const QUEUE_KEY = '@robinthood_report_queue_v1';
@@ -25,13 +26,18 @@ async function installId() {
   return id;
 }
 
+// Signed when sent (not when queued), so a report saved offline is still inside the
+// worker's time window when it finally goes.
 async function post(report) {
-  const res = await fetch(REPORT_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(report),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = JSON.stringify(report);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(REPORT_URL, { method: 'POST', headers: await makeAuthHeaders(body), body, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function readQueue() {

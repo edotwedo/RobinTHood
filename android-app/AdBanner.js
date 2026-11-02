@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import mobileAds, { AdsConsent, BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
 // Public test IDs for development and verification before live approval
 const AD_UNIT_ID = __DEV__ ? TestIds.ADAPTIVE_BANNER : 'ca-app-pub-3940256099942544/6300978111';
@@ -12,19 +12,46 @@ const SPONSORS = [
   { text: '★ SPONSOR: Advertise your developer tool to 50k+ AI users', url: 'mailto:sponsor@robincode.dev' },
 ];
 
-export function AdBanner({ isPro }) {
+// Google's consent form (UMP) runs once per launch before any ad request; in the EEA and
+// UK it asks the user, elsewhere it returns at once. Offline, last launch's answer stands.
+// The form's text is set up in AdMob under Privacy & messaging.
+let consentOnce;
+function adsAllowed() {
+  consentOnce ??= (async () => {
+    let canRequestAds = false;
+    try {
+      ({ canRequestAds } = await AdsConsent.gatherConsent());
+    } catch {
+      try { ({ canRequestAds } = await AdsConsent.getConsentInfo()); } catch {}
+    }
+    if (canRequestAds) await mobileAds().initialize().catch(() => {});
+    return Boolean(canRequestAds);
+  })();
+  return consentOnce;
+}
+
+// Settings button: lets the user change their ad consent later, as UMP requires.
+export function openAdPrivacyOptions() {
+  return AdsConsent.showPrivacyOptionsForm().catch(() => {});
+}
+
+export function AdBanner({ hidden }) {
+  const [allowed, setAllowed] = useState(null);
   const [adFailed, setAdFailed] = useState(false);
   const [sponsorIdx] = useState(() => Math.floor(Math.random() * SPONSORS.length));
 
-  if (isPro) {
-    return null;
-  }
+  useEffect(() => {
+    let live = true;
+    adsAllowed().then((ok) => live && setAllowed(ok));
+    return () => { live = false; };
+  }, []);
 
+  if (allowed === null) return null;
   const sponsor = SPONSORS[sponsorIdx];
 
   return (
-    <View style={styles.container}>
-      {!adFailed ? (
+    <View style={[styles.container, hidden && styles.hidden]}>
+      {allowed && !adFailed ? (
         <BannerAd
           unitId={AD_UNIT_ID}
           size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
@@ -56,6 +83,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#1f2937',
     minHeight: 50,
   },
+  hidden: { display: 'none' },
   sponsorCard: {
     paddingVertical: 8,
     paddingHorizontal: 16,

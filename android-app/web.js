@@ -43,8 +43,8 @@ async function hmacSha256Hex(key, message) {
   return hex(await sha256(outer));
 }
 
-// Timestamped HMAC signature plus a one-time nonce for the edge worker
-async function makeAuthHeaders(payloadString) {
+// Timestamped HMAC signature plus a one-time nonce for the edge workers (search and reports)
+export async function makeAuthHeaders(payloadString) {
   const ts = Math.floor(Date.now() / 1000).toString();
   const nonce = Crypto.randomUUID();
   const sig = await hmacSha256Hex(CLIENT_SECRET, `${ts}:${nonce}:${payloadString}`);

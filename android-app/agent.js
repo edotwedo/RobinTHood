@@ -10,6 +10,8 @@
 import { buildMessages, engineOrder, labelFor, runEngine } from './engines';
 import { pageText, searchWeb } from './web';
 import { listAll, listFiles, readAll, readFile, writeAll, writeFile } from './files';
+import { fallbackNeedsConsent, userTextOf } from './cascade';
+import { detectSensitive, maskSensitive } from './privacy';
 
 const MAX_STEPS = 8;
 
@@ -158,6 +160,29 @@ async function runAction(action, ctx) {
   }
 }
 
+// Before the cascade steps down in privacy (a model with no * to a * one, or off the
+// user's own Ollama), ask once per message. Returns true when this engine may be used.
+async function fallbackAllowed(state, messages, id, signal) {
+  if (state.fallbackOk || !fallbackNeedsConsent(state.chosen, id)) return true;
+  if (state.fallbackDeclined || !state.ctx.confirmFallback) return false;
+  const choice = await state.ctx.confirmFallback({
+    from: labelFor(state.chosen, state.settings),
+    to: labelFor(id, state.settings),
+    found: detectSensitive(userTextOf(messages, state.webTurns)),
+  });
+  if (signal?.aborted) throw new Error('Stopped');
+  if (!choice) {
+    state.fallbackDeclined = true;
+    return false;
+  }
+  if (choice === 'mask') {
+    state.mask = true;
+    for (const m of messages) if (m.role !== 'system') m.content = maskSensitive(m.content).text;
+  }
+  state.fallbackOk = true;
+  return true;
+}
+
 // Runs one model call, falling through the cascade if an engine fails.
 // Sticks with the first engine that works for the rest of the message.
 async function callModel(state, messages, onText, signal, onThinking) {
@@ -165,6 +190,10 @@ async function callModel(state, messages, onText, signal, onThinking) {
   for (let i = state.engineIndex; i < state.order.length; i++) {
     const id = state.order[i];
     if (signal?.aborted) throw new Error('Stopped');
+    if (!(await fallbackAllowed(state, messages, id, signal))) {
+      errors.push(`${labelFor(id, state.settings)}: skipped, it may collect your messages`);
+      continue;
+    }
     try {
       const text = await runEngine(id, state.settings, messages, onText, signal, (t) => onThinking?.(t, id));
       state.engineIndex = i;
@@ -182,7 +211,10 @@ async function callModel(state, messages, onText, signal, onThinking) {
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
   const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
-  const state = { settings, order: engineOrder(settings), engineIndex: 0 };
+  const state = {
+    settings, ctx, chosen: settings.selectedModel || 'auto', order: engineOrder(settings), engineIndex: 0,
+    webTurns: new Set(), fallbackOk: false, fallbackDeclined: false, mask: false,
+  };
   const steps = [];
   const sources = [];
   const files = [];
@@ -246,8 +278,12 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     const echo = action.kind === 'LIST' ? `LIST FILES${action.arg ? `: ${action.arg}` : ''}` : action.kind === 'WRITE'
       ? `WRITE: ${action.arg}\n${action.body.length > 1500 ? action.body.slice(0, 1500) + '\n[...]' : action.body}`
       : `${action.kind}: ${action.arg}`;
-    messages.push({ role: 'assistant', content: echo });
-    messages.push({ role: 'user', content: `RESULT of ${echo.split('\n')[0]}\n\n${result.text}\n\n(Next: another action, or your final answer.)` });
+    // Once the user chose to mask for a * model, everything after is masked too.
+    const out = (s) => (state.mask ? maskSensitive(s).text : s);
+    const resultMsg = { role: 'user', content: out(`RESULT of ${echo.split('\n')[0]}\n\n${result.text}\n\n(Next: another action, or your final answer.)`) };
+    if (action.kind === 'SEARCH' || action.kind === 'OPEN') state.webTurns.add(resultMsg);
+    messages.push({ role: 'assistant', content: out(echo) });
+    messages.push(resultMsg);
   }
   return { ok: false, text: 'Stopped without an answer.', id: usedId };
 }
