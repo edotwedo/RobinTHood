@@ -24,7 +24,13 @@ module.exports = ({ config }) => {
   const personal = process.env.ROBIN_ALL_FILES === '1';
   // Search worker signing key, from CI secrets. Without it the app skips the worker.
   const robinSecret = process.env.ROBIN_CLIENT_SECRET || '';
-  const baseConfig = withAdMobCompatibility(config);
+  // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
+  // blocks in release builds unless cleartext is allowed. Every other address the app
+  // uses is https.
+  const baseConfig = withAdMobCompatibility({
+    ...config,
+    plugins: [...(config.plugins || []), ['expo-build-properties', { android: { usesCleartextTraffic: true } }]],
+  });
 
   if (!personal) {
     return {

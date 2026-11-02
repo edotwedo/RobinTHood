@@ -23,6 +23,17 @@ const MIME = {
   html: 'text/html', htm: 'text/html', js: 'text/javascript', xml: 'text/xml',
 };
 
+// READ hands text to the model, so it refuses what can't be text and anything big enough
+// to run the phone out of memory when loaded into a string (the cut to 12 000 chars
+// comes after the whole file is read).
+const MAX_READ_BYTES = 1000000;
+const BINARY_EXT = /\.(zip|gz|tgz|7z|rar|tar|apk|aab|jar|exe|dll|so|bin|iso|img|dmg|pdf|docx?|xlsx?|pptx?|odt|jpe?g|png|gif|webp|heic|bmp|tiff?|mp3|m4a|aac|ogg|opus|wav|flac|mp4|m4v|mkv|webm|mov|avi|3gp|db|sqlite|realm)$/i;
+
+function checkReadable(name, size) {
+  if (BINARY_EXT.test(String(name).trim())) throw new Error(`${name} is not a text file, so Robin can't read it`);
+  if (size > MAX_READ_BYTES) throw new Error(`${name} is ${Math.round(size / 1000)} kB; Robin only reads text files up to ${MAX_READ_BYTES / 1000} kB`);
+}
+
 export function cleanName(name) {
   let n = String(name).trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop();
   n = n.replace(/[<>:"|?*\u0000-\u001f]/g, '').trim();
@@ -60,8 +71,18 @@ export async function readFile(dirUri, name, maxChars = 12000) {
   const want = cleanName(name).toLowerCase();
   const hit = (await entries(dirUri)).find((e) => e.name.toLowerCase() === want || e.name.toLowerCase() === String(name).trim().toLowerCase());
   if (!hit) throw new Error(`No file named ${name}`);
+  checkReadable(hit.name, 0);
+  // Size is not reported for every SAF provider; when it is missing, the type check stands alone.
+  const info = await getInfoAsync(hit.uri).catch(() => ({}));
+  checkReadable(hit.name, info.size || 0);
   const text = await readAsStringAsync(hit.uri);
   return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
+}
+
+// True when a WRITE of this name would replace a file in the folder.
+export async function fileExists(dirUri, name) {
+  const fileName = cleanName(name).toLowerCase();
+  return (await entries(dirUri)).some((e) => e.name.toLowerCase() === fileName);
 }
 
 export async function writeFile(dirUri, name, content) {
@@ -125,15 +146,26 @@ export async function listAll(folder) {
 }
 
 export async function readAll(path, maxChars = 12000) {
-  const text = await fs().readFile(resolvePath(path), 'utf8');
+  const full = resolvePath(path);
+  checkReadable(full, (await fs().stat(full)).size);
+  const text = await fs().readFile(full, 'utf8');
   return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
 }
 
-export async function writeAll(path, content) {
+// Where WRITE puts a path: .md added when there is no extension, bare names in Documents/RobinTHood.
+function writePath(path) {
   let rel = String(path).trim();
   if (!/\.[a-z0-9]{1,6}$/i.test(rel)) rel += '.md';
   if (!rel.includes('/')) rel = `Documents/RobinTHood/${rel}`;
-  const full = resolvePath(rel);
+  return resolvePath(rel);
+}
+
+export async function existsAll(path) {
+  return fs().exists(writePath(path));
+}
+
+export async function writeAll(path, content) {
+  const full = writePath(path);
   const replaced = await fs().exists(full);
   await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
   await fs().writeFile(full, content, 'utf8');

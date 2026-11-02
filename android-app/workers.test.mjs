@@ -43,6 +43,13 @@ test('report: admin token checked', async () => {
 const store = new Map();
 globalThis.caches = { default: { match: async (r) => store.get(r.url), put: async (r, res) => store.set(r.url, res) } };
 const realFetch = globalThis.fetch;
+const readRaw = async (upstream, { url = 'https://example.org/p' + Math.random(), install, ts, ip, env: extra = {} } = {}) => {
+  globalThis.fetch = async () => upstream();
+  const body = JSON.stringify({ url, maxChars: 500, install });
+  const res = await search.fetch(new Request('https://w/v1/read', { method: 'POST', body, headers: { ...sign(body, ts), 'cf-connecting-ip': ip || '9.9.9.' + Math.floor(Math.random() * 200) } }), { ROBIN_CLIENT_SECRET: SECRET, ...extra });
+  globalThis.fetch = realFetch;
+  return res;
+};
 const read = async (upstream, url = 'https://example.org/p' + Math.random()) => {
   globalThis.fetch = async () => upstream();
   const body = JSON.stringify({ url, maxChars: 500 });
@@ -68,4 +75,24 @@ test('read: endless body stops at the cap', async () => {
   const stream = new ReadableStream({ pull(c) { sent += 65536; c.enqueue(new TextEncoder().encode('<p>' + 'a '.repeat(32766) + '</p>')); } });
   const j = await read(() => new Response(stream, { headers: { 'Content-Type': 'text/html' } }));
   assert.equal(j.ok, true); assert.ok(sent < 3_000_000, `pulled ${sent} bytes`);
+});
+
+test('search worker: a stale timestamp gets serverTime back so the phone can fix its clock', async () => {
+  const res = await readRaw(() => new Response(page, { headers: { 'Content-Type': 'text/html' } }), { ts: Math.floor(Date.now() / 1000) - 600 });
+  assert.equal(res.status, 401);
+  const j = await res.json();
+  assert.ok(Math.abs(j.serverTime - Date.now() / 1000) < 5);
+});
+
+test('search worker: limits are per install, with a per-IP ceiling', async () => {
+  const seen = [];
+  const limiter = (cap) => { const n = new Map(); return { limit: async ({ key }) => { seen.push(key); n.set(key, (n.get(key) || 0) + 1); return { success: n.get(key) <= cap }; } }; };
+  const env = { RATE_LIMITER: limiter(2), RATE_LIMITER_IP: limiter(5) };
+  const ok = () => new Response(page, { headers: { 'Content-Type': 'text/html' } });
+  const go = (install) => readRaw(ok, { install, ip: '7.7.7.7', env }).then((r) => r.status);
+  assert.deepEqual([await go('install-aaaa'), await go('install-aaaa'), await go('install-aaaa')], [200, 200, 429]);
+  assert.equal(await go('install-bbbb'), 200, 'another phone on the same IP has its own budget');
+  assert.equal(await go('install-cccc'), 200);
+  assert.equal(await go('install-dddd'), 429, 'the per-IP ceiling still holds');
+  assert.ok(seen.includes('signed:7.7.7.7:install-aaaa') && seen.includes('ip:7.7.7.7'));
 });

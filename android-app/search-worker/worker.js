@@ -17,8 +17,11 @@ const MAX_REDIRECTS = 5;
 const READ_TIMEOUT_MS = 8000;
 const MAX_PAGE_BYTES = 1500000;
 const READABLE_TYPES = /^(text\/html|application\/xhtml\+xml|text\/plain)\b/i;
-// Keep in step with [[ratelimits]] simple.limit in wrangler.toml.
+// Keep in step with the [[ratelimits]] limits in wrangler.toml. Signed requests are
+// limited per install (an id in the signed body) so phones behind one carrier IP don't
+// share a budget, and per IP more loosely so made-up install ids can't lift the limit.
 const SIGNED_LIMIT_PER_MIN = 30;
+const SIGNED_IP_LIMIT_PER_MIN = 300;
 const UNSIGNED_FLOOD_LIMIT_PER_MIN = 120;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -66,19 +69,33 @@ function isRateLimited(ip, limit = 30, windowSec = 60) {
   return bucket.count > limit;
 }
 
-// Per-IP limit on requests that passed the signature check, so forged traffic can't
-// spend a real user's budget. Uses the Workers Rate Limiting binding (shared by all
-// isolates in a location, see wrangler.toml) and falls back to the isolate map.
-async function signedRequestLimited(env, ip) {
-  if (env.RATE_LIMITER) {
+// Limits on requests that passed the signature check, so forged traffic can't spend a
+// real user's budget. Uses the Workers Rate Limiting bindings (shared by all isolates in
+// a location, see wrangler.toml) and falls back to the isolate map.
+async function overLimit(binding, key, limit) {
+  if (binding) {
     try {
-      const { success } = await env.RATE_LIMITER.limit({ key: `signed:${ip}` });
+      const { success } = await binding.limit({ key });
       return !success;
     } catch (e) {
       console.error('Rate limiter error:', e.message);
     }
   }
-  return isRateLimited(`signed:${ip}`, SIGNED_LIMIT_PER_MIN, 60);
+  return isRateLimited(key, limit, 60);
+}
+
+function installOf(rawBody) {
+  try {
+    const id = JSON.parse(rawBody)?.install;
+    return typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id) ? id : '-';
+  } catch {
+    return '-';
+  }
+}
+
+async function signedRequestLimited(env, ip, rawBody) {
+  if (await overLimit(env.RATE_LIMITER_IP, `ip:${ip}`, SIGNED_IP_LIMIT_PER_MIN)) return true;
+  return overLimit(env.RATE_LIMITER, `signed:${ip}:${installOf(rawBody)}`, SIGNED_LIMIT_PER_MIN);
 }
 
 function rateLimitResponse() {
@@ -146,7 +163,8 @@ async function verifyAppSignature(request, rawBody, secret, env, ip) {
 
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - ts) > REPLAY_WINDOW_SEC) {
-    return { ok: false, status: 401, error: 'Unauthorized: Timestamp expired or clock drift > 120s' };
+    // The app adopts serverTime and signs again, so a phone with a wrong clock still works.
+    return { ok: false, status: 401, error: 'Unauthorized: Timestamp expired or clock drift > 120s', serverTime: now };
   }
 
   const expectedSig = await hmacHex(secret, `${ts}:${nonce}:${rawBody}`);
@@ -154,7 +172,7 @@ async function verifyAppSignature(request, rawBody, secret, env, ip) {
     return { ok: false, status: 403, error: 'Forbidden: Invalid app signature' };
   }
 
-  if (await signedRequestLimited(env, ip)) {
+  if (await signedRequestLimited(env, ip, rawBody)) {
     return { ok: false, limited: true };
   }
 
@@ -412,7 +430,7 @@ export default {
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
-          return new Response(JSON.stringify({ error: auth.error }), {
+          return new Response(JSON.stringify({ error: auth.error, serverTime: auth.serverTime }), {
             status: auth.status,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
@@ -520,7 +538,7 @@ export default {
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
-          return new Response(JSON.stringify({ error: auth.error }), {
+          return new Response(JSON.stringify({ error: auth.error, serverTime: auth.serverTime }), {
             status: auth.status,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
           });
