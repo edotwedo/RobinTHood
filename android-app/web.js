@@ -5,6 +5,7 @@ import { fetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
 import { isUnsafeUrl } from './urlsafety';
+import { installId } from './install';
 
 const UA = 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36';
 const SEARCH_SERVICE_URL = 'https://robinthood-search.phone-liaison.workers.dev';
@@ -43,9 +44,23 @@ async function hmacSha256Hex(key, message) {
   return hex(await sha256(outer));
 }
 
+// Seconds to add to the phone's clock when signing. A phone whose clock is minutes out
+// fails the worker's 120 s window on every request; the worker sends its own time with
+// that refusal, and the phone adopts it (up to a day out) and signs again once.
+let clockOffsetSec = 0;
+const nowSec = () => Math.floor(Date.now() / 1000) + clockOffsetSec;
+function learnClock(json) {
+  const server = Number(json?.serverTime);
+  if (!Number.isFinite(server)) return false;
+  const offset = server - Math.floor(Date.now() / 1000);
+  if (Math.abs(offset) > 86400 || Math.abs(offset - clockOffsetSec) < 60) return false;
+  clockOffsetSec = offset;
+  return true;
+}
+
 // Timestamped HMAC signature plus a one-time nonce for the edge workers (search and reports)
 export async function makeAuthHeaders(payloadString) {
-  const ts = Math.floor(Date.now() / 1000).toString();
+  const ts = nowSec().toString();
   const nonce = Crypto.randomUUID();
   const sig = await hmacSha256Hex(CLIENT_SECRET, `${ts}:${nonce}:${payloadString}`);
   return {
@@ -179,36 +194,47 @@ async function searchWikipedia(query, lang = 'en') {
   }));
 }
 
+// Signed POST to the search worker, carrying the install id (the worker's rate limit is
+// per install, so phones behind one carrier IP don't share it). Re-signs once when the
+// refusal was the phone's clock. Returns { res, json } where json is set for a 401.
+async function workerPost(path, body, signal) {
+  for (let attempt = 0; ; attempt++) {
+    const payload = JSON.stringify({ ...body, install: await installId() });
+    const res = await fetch(`${SEARCH_SERVICE_URL}${path}`, { method: 'POST', headers: await makeAuthHeaders(payload), body: payload, signal });
+    if (res.status !== 401) return { res };
+    const json = await res.json().catch(() => null);
+    if (attempt > 0 || !learnClock(json)) return { res, json };
+  }
+}
+
 // Pull readable text from a page, best effort. Pages are read only through the search
 // worker, never fetched from the phone: the phone sits on the user's home network, and a
 // page the model chose (perhaps told to by another page) could point it at the router or
-// any device there. A refused or failed read returns '' and the model tries another result.
-export async function pageText(url, maxChars = 2500) {
+// any device there. Returns { text, reason }: text is '' when the read failed, and reason
+// says why (unreadable, busy, clock, offline) so the model can tell the user.
+export async function pageRead(url, maxChars = 2500) {
   const cleanUrl = sanitizeWebUrl(url);
-  if (!cleanUrl || isUnsafeUrl(cleanUrl)) return '';
-  if (!isWorkerAvailable()) return '';
+  if (!cleanUrl || isUnsafeUrl(cleanUrl)) return { text: '', reason: 'unreadable' };
+  if (!isWorkerAvailable()) return { text: '', reason: 'offline' };
   try {
-    const payload = JSON.stringify({ url: cleanUrl, maxChars });
-    const headers = await makeAuthHeaders(payload);
-    const json = await withTimeout(async (signal) => {
-      const res = await fetch(`${SEARCH_SERVICE_URL}/v1/read`, {
-        method: 'POST',
-        headers,
-        body: payload,
-        signal,
-      });
-      // A 4xx is the worker refusing this one page (restricted or unreadable URL), not the
-      // worker being down, so it must not trip the circuit for every read after it.
-      if (res.status >= 400 && res.status < 500) return null;
+    return await withTimeout(async (signal) => {
+      const { res, json } = await workerPost('/v1/read', { url: cleanUrl, maxChars }, signal);
+      // A 4xx is the worker refusing this one request, not the worker being down, so it
+      // must not trip the circuit for every read after it.
+      if (res.status === 429) return { text: '', reason: 'busy' };
+      if (res.status === 401 && json?.serverTime) return { text: '', reason: 'clock' };
+      if (res.status >= 400 && res.status < 500) return { text: '', reason: 'unreadable' };
       if (!res.ok) throw new Error(`Worker read HTTP ${res.status}`);
-      return res.json();
+      const data = await res.json();
+      return data?.ok && data.text ? { text: data.text.slice(0, maxChars), reason: '' } : { text: '', reason: 'unreadable' };
     }, 4000);
-    return json?.ok && json.text ? json.text.slice(0, maxChars) : '';
   } catch {
     tripWorkerCircuit(60000);
-    return '';
+    return { text: '', reason: 'offline' };
   }
 }
+
+export const pageText = async (url, maxChars) => (await pageRead(url, maxChars)).text;
 
 // Search only (no page reading); the model decides which pages to open.
 // DuckDuckGo blocks Cloudflare's IPs, so a worker with no Brave key can only answer from
@@ -229,15 +255,8 @@ export async function searchWeb(query, lang = 'en') {
   // 1. Try dedicated edge worker first (authenticated POST, edge-cached, bot-immune)
   if (isWorkerAvailable()) {
     try {
-      const payload = JSON.stringify({ query, lang });
-      const headers = await makeAuthHeaders(payload);
       const json = await withTimeout(async (signal) => {
-        const res = await fetch(`${SEARCH_SERVICE_URL}/v1/search`, {
-          method: 'POST',
-          headers,
-          body: payload,
-          signal,
-        });
+        const { res } = await workerPost('/v1/search', { query, lang }, signal);
         if (!res.ok) throw new Error(`Worker search HTTP ${res.status}`);
         return res.json();
       }, 4000);

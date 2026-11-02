@@ -2,14 +2,24 @@ name = "robinthood-search"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
-# Per-IP limit for signed requests, shared across isolates in a Cloudflare location.
-# Keep limit in step with SIGNED_LIMIT_PER_MIN in worker.js.
+# Per-install limit for signed requests (key ip:install), shared across isolates in a
+# Cloudflare location. Keep limit in step with SIGNED_LIMIT_PER_MIN in worker.js.
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1001"
 
   [ratelimits.simple]
   limit = 30
+  period = 60
+
+# Looser per-IP limit for signed requests, so made-up install ids can't lift the limit.
+# Keep in step with SIGNED_IP_LIMIT_PER_MIN in worker.js.
+[[ratelimits]]
+name = "RATE_LIMITER_IP"
+namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 300
   period = 60
 
 # Nonce store shared by every Cloudflare location, so a signed request can't be

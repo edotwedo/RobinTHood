@@ -3,11 +3,11 @@
 // if it can't be reached, they wait on the phone and are sent on a later launch.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetch } from 'expo/fetch';
+import { installId } from './install';
 import { makeAuthHeaders } from './web';
 
 export const REPORT_URL = 'https://robinthood-reports.phone-liaison.workers.dev/report';
 const QUEUE_KEY = '@robinthood_report_queue_v1';
-const ID_KEY = '@robinthood_install_id';
 
 export const REPORT_REASONS = [
   { id: 'offensive', label: 'Offensive or hateful' },
@@ -16,15 +16,6 @@ export const REPORT_REASONS = [
   { id: 'wrong', label: 'Wrong or made up' },
   { id: 'other', label: 'Something else' },
 ];
-
-async function installId() {
-  let id = await AsyncStorage.getItem(ID_KEY).catch(() => null);
-  if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    await AsyncStorage.setItem(ID_KEY, id).catch(() => {});
-  }
-  return id;
-}
 
 // Signed when sent (not when queued), so a report saved offline is still inside the
 // worker's time window when it finally goes.

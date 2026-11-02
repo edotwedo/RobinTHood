@@ -71,6 +71,18 @@ function thinkingTail(text) {
   return '…' + cut.slice(cut.indexOf(' ') + 1);
 }
 
+// "{name} is busy" with { name: 'X' } -> "X is busy", for the translated dialog strings.
+const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+const labelsOf = (found) => [...new Set(found.map((f) => f.label))].join(', ');
+
+// What the WRITE tap shows: the name, whether it replaces a file, and how the contents start.
+const PREVIEW_CHARS = 300;
+function writeDetail(action, lang) {
+  const body = String(action.body || '').trim();
+  const preview = body.length > PREVIEW_CHARS ? `${body.slice(0, PREVIEW_CHARS)}…` : body;
+  return `${action.arg}${action.exists ? `\n${t('confirmReplaces', lang)}` : ''}\n\n“${preview}”`;
+}
+
 function openLink(url) {
   if (/^https?:\/\//i.test(url)) Linking.openURL(url).catch(() => {});
 }
@@ -312,20 +324,26 @@ function Chat() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
-  const send = useCallback(async (override) => {
+  const send = useCallback(async (override, opts = {}) => {
     // onPress hands us the tap event; only a string means "send exactly this".
     const checked = typeof override === 'string';
     const text = (checked ? override : input).trim();
     if (!text || busy) return;
-    if (!checked && mayCollect(settings.selectedModel || 'auto')) {
-      const found = detectSensitive(text);
+    const collects = mayCollect(settings.selectedModel || 'auto');
+    // The earlier chat goes along with every message, so a * model also gets what was
+    // typed while a model with no * was picked. Check the user messages it hasn't seen
+    // yet (no sharedStar) along with this one.
+    const unseen = (m) => m.role === 'user' && !m.sharedStar;
+    if (!checked && collects) {
+      const earlier = messages.filter(unseen).map((m) => m.content).join('\n');
+      const found = detectSensitive(`${earlier}\n${text}`);
       if (found.length) {
-        const what = [...new Set(found.map((f) => f.label))].join(', ');
+        const where = detectSensitive(earlier).length ? 'This chat' : 'Your message';
         Alert.alert(
           'Looks like private info',
-          `Your message seems to include: ${what}. The model you're using (marked *) may collect messages.`,
+          `${where} seems to include: ${labelsOf(found)}. The model you're using (marked *) may collect messages, including earlier ones in this chat.`,
           [
-            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text) },
+            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true }) },
             { text: 'Send anyway', style: 'destructive', onPress: () => send(text) },
             { text: 'Edit', style: 'cancel' },
           ],
@@ -333,9 +351,12 @@ function Chat() {
         return;
       }
     }
-    const userMsg = { id: newId(), role: 'user', content: text };
+    let prior = messages;
+    if (opts.maskEarlier) prior = prior.map((m) => (unseen(m) ? { ...m, content: maskSensitive(m.content).text } : m));
+    if (collects) prior = prior.map((m) => (unseen(m) ? { ...m, sharedStar: true } : m));
+    const userMsg = { id: newId(), role: 'user', content: text, ...(collects ? { sharedStar: true } : {}) };
     const replyId = newId();
-    const history = [...messages, userMsg];
+    const history = [...prior, userMsg];
     setMessages([...history, { id: replyId, role: 'assistant', content: '', model: labelFor(settings.selectedModel, settings), pending: true }]);
     setInput('');
     setBusy(true);
@@ -376,10 +397,11 @@ function Chat() {
             const lang = settings.lang;
             const detail = action.kind === 'OPEN' ? action.arg
               : action.kind === 'LIST' ? (action.arg || t('confirmYourFiles', lang))
+              : action.kind === 'WRITE' ? writeDetail(action, lang)
               : action.arg;
             setStatus(t('confirmWaiting', lang));
             Alert.alert(
-              t(`confirm${action.kind}`, lang),
+              t(action.kind === 'WRITE' && action.exists ? 'confirmWRITEReplace' : `confirm${action.kind}`, lang),
               `${detail}\n\n${t('confirmWhy', lang)}`,
               [
                 { text: t('confirmDeny', lang), style: 'cancel', onPress: () => resolve(false) },
@@ -392,10 +414,8 @@ function Chat() {
           // messages. Resolves 'mask', 'send' or false.
           confirmFallback: ({ from, to, found }) => new Promise((resolve) => {
             const lang = settings.lang;
-            const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
-            const what = [...new Set(found.map((f) => f.label))].join(', ');
             let body = fill(t('fallbackBody', lang), { from, to });
-            if (found.length) body += `\n\n${fill(t('fallbackFound', lang), { what })}`;
+            if (found.length) body += `\n\n${fill(t('fallbackFound', lang), { what: labelsOf(found) })}`;
             setStatus(t('confirmWaiting', lang));
             Alert.alert(
               t('fallbackTitle', lang),
@@ -404,6 +424,22 @@ function Chat() {
                 { text: t('fallbackStop', lang), style: 'cancel', onPress: () => resolve(false) },
                 ...(found.length ? [{ text: t('fallbackMask', lang), onPress: () => resolve('mask') }] : []),
                 { text: t('fallbackSend', lang), style: found.length ? 'destructive' : 'default', onPress: () => resolve('send') },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          }),
+          // A file Robin read has private details and the model may collect messages.
+          // Resolves 'mask', 'send' or false (keep the file out of the chat).
+          confirmShare: ({ name, to, found }) => new Promise((resolve) => {
+            const lang = settings.lang;
+            setStatus(t('confirmWaiting', lang));
+            Alert.alert(
+              t('shareTitle', lang),
+              fill(t('shareBody', lang), { name, to, what: labelsOf(found) }),
+              [
+                { text: t('shareKeep', lang), style: 'cancel', onPress: () => resolve(false) },
+                { text: t('fallbackMask', lang), onPress: () => resolve('mask') },
+                { text: t('shareSend', lang), style: 'destructive', onPress: () => resolve('send') },
               ],
               { cancelable: true, onDismiss: () => resolve(false) },
             );
@@ -778,6 +814,9 @@ function Chat() {
 
               <Field label="Home Ollama URL (optional)" value={settings.ollamaUrl} placeholder="http://my-pc.tailscale.net:11434"
                 onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))} />
+              {/^http:\/\//i.test(settings.ollamaUrl) ? (
+                <Text style={styles.hint}>http:// is not encrypted. That is fine over Tailscale or your home Wi-Fi, not over the open internet.</Text>
+              ) : null}
               <Field label="Ollama model" value={settings.ollamaModel} placeholder="llama3.1"
                 onChange={(v) => setSettings((s) => ({ ...s, ollamaModel: v.trim() }))} />
               <Field label="OpenRouter key (optional)" value={settings.openRouterKey} placeholder="sk-or-v1-..." secure
