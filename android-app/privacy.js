@@ -140,5 +140,6 @@ export const HOW_IT_WORKS = [
   'Robin has no AI of its own. It borrows free capacity from several services and moves between them when one is busy, rate limited or down. We do that hopping so you do not need accounts or a subscription.',
   'Free usually has strings. Providers limit how much you can use, and some free services log or learn from the messages sent to them.',
   'A * next to a model means we could not confirm it leaves your messages alone. No * means the provider says it does not store or train on them, and that is their statement, not a guarantee.',
-  'Robin has no analytics or tracking. Your chats stay on your phone, but each message is sent to the model service you are using, so it can see that message and the recent chat that goes with it.',
+  'Robin has no analytics of its own. The free version shows Google ads, and Google\'s ads SDK collects device identifiers such as the advertising ID; you are asked for consent where the law requires it. Your chats stay on your phone, but each message is sent to the model service you are using, so it can see that message and the recent chat that goes with it.',
+  'If the model you picked has no * and it is busy, Robin asks before it uses one marked *, and offers to mask private details first.',
 ];

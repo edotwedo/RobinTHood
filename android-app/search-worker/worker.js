@@ -12,6 +12,11 @@ const CORS_HEADERS = {
 const REPLAY_WINDOW_SEC = 120;
 const MAX_READ_CHARS = 20000;
 const MAX_REDIRECTS = 5;
+// Bounds on what /v1/read pulls from a page, so one huge or slow URL can't take the
+// isolate's memory or time from every other request on it.
+const READ_TIMEOUT_MS = 8000;
+const MAX_PAGE_BYTES = 1500000;
+const READABLE_TYPES = /^(text\/html|application\/xhtml\+xml|text\/plain)\b/i;
 // Keep in step with [[ratelimits]] simple.limit in wrangler.toml.
 const SIGNED_LIMIT_PER_MIN = 30;
 const UNSIGNED_FLOOD_LIMIT_PER_MIN = 120;
@@ -200,13 +205,30 @@ async function safeFetch(url, init) {
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (isUnsafeUrl(current)) throw new Error('Restricted URL');
-    const res = await fetch(current, { ...init, redirect: 'manual' });
+    const res = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
     if (res.status < 300 || res.status >= 400) return res;
     const next = res.headers.get('Location');
     if (!next) return res;
     current = new URL(next, current).href;
   }
   throw new Error('Too many redirects');
+}
+
+// Reads at most maxBytes of a response body, then drops the rest of the download.
+async function readCappedText(res, maxBytes) {
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let size = 0;
+  while (size < maxBytes) {
+    const { value, done } = await reader.read();
+    if (done) return text + decoder.decode();
+    size += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel().catch(() => {});
+  return text;
 }
 
 function decodeEntities(s) {
@@ -314,7 +336,15 @@ async function extractPageText(url, maxChars = 5000) {
       },
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-    const html = (await res.text()).slice(0, 250000);
+    if (!READABLE_TYPES.test(res.headers.get('Content-Type') || '')) {
+      await res.body?.cancel().catch(() => {});
+      return { ok: false, error: 'Not a text page' };
+    }
+    if (Number(res.headers.get('Content-Length') || 0) > MAX_PAGE_BYTES * 2) {
+      await res.body?.cancel().catch(() => {});
+      return { ok: false, error: 'Page too large' };
+    }
+    const html = (await readCappedText(res, MAX_PAGE_BYTES)).slice(0, 250000);
 
     // Filter out common bot challenge pages
     if (html.includes('cf-browser-verification') || html.includes('Just a moment...') || html.includes('captcha-delivery')) {

@@ -6,3 +6,12 @@ compatibility_date = "2026-10-01"
 binding = "DB"
 database_name = "robinthood-reports"
 database_id = "6c764d78-07ae-4312-9222-323ef0ef44c3"
+
+# Per-IP limit on POST /report. Keep in step with REPORTS_PER_MIN in worker.js.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 5
+  period = 60

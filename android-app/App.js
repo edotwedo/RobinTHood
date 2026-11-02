@@ -13,7 +13,7 @@ import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
 import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder } from './files';
 import { getDeviceLocale, t } from './i18n';
-import { AdBanner } from './AdBanner';
+import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { parseBlocks, parseInline } from './markdown';
 import { AVOID, FINE, HOW_IT_WORKS, OBFUSCATE, SELF_CHECK, assess, detectSensitive, markFor, maskSensitive, mayCollect, privacyOf } from './privacy';
 
@@ -241,6 +241,7 @@ function Chat() {
   const [reportReason, setReportReason] = useState(null);
   const [reportNote, setReportNote] = useState('');
   const [reportDone, setReportDone] = useState('');
+  const [reportSending, setReportSending] = useState(false);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
   const listRef = useRef(null);
 
@@ -286,7 +287,9 @@ function Chat() {
     (async () => {
       try {
         const [s, c] = await Promise.all([AsyncStorage.getItem(KEYS.settings), AsyncStorage.getItem(KEYS.chat)]);
-        if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s) });
+        // Pro can only be switched on in a dev build (see Settings), so a saved flag
+        // from an older release build doesn't keep ads off.
+        if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s), ...(__DEV__ ? {} : { isPro: false }) });
         if (c) {
           const saved = JSON.parse(c);
           if (Array.isArray(saved) && saved.length) setMessages(saved);
@@ -385,6 +388,26 @@ function Chat() {
               { cancelable: true, onDismiss: () => resolve(false) },
             );
           }),
+          // The chosen model (no *) or Home Ollama failed and the next one may collect
+          // messages. Resolves 'mask', 'send' or false.
+          confirmFallback: ({ from, to, found }) => new Promise((resolve) => {
+            const lang = settings.lang;
+            const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+            const what = [...new Set(found.map((f) => f.label))].join(', ');
+            let body = fill(t('fallbackBody', lang), { from, to });
+            if (found.length) body += `\n\n${fill(t('fallbackFound', lang), { what })}`;
+            setStatus(t('confirmWaiting', lang));
+            Alert.alert(
+              t('fallbackTitle', lang),
+              body,
+              [
+                { text: t('fallbackStop', lang), style: 'cancel', onPress: () => resolve(false) },
+                ...(found.length ? [{ text: t('fallbackMask', lang), onPress: () => resolve('mask') }] : []),
+                { text: t('fallbackSend', lang), style: found.length ? 'destructive' : 'default', onPress: () => resolve('send') },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          }),
         },
         onEvent: (ev) => {
           if (ev.type === 'text') { setStatus(`Asking ${ev.model}…`); update({ content: ev.text, model: ev.model }); }
@@ -434,15 +457,21 @@ function Chat() {
   };
 
   const sendReport = async () => {
-    if (!reporting || !reportReason) return;
-    const outcome = await submitReport({
-      reason: reportReason,
-      note: reportNote.trim(),
-      model: reporting.message.model,
-      question: reporting.question,
-      answer: reporting.message.content,
-      version: Constants.expoConfig?.version,
-    });
+    if (!reporting || !reportReason || reportSending) return;
+    setReportSending(true);
+    let outcome;
+    try {
+      outcome = await submitReport({
+        reason: reportReason,
+        note: reportNote.trim(),
+        model: reporting.message.model,
+        question: reporting.question,
+        answer: reporting.message.content,
+        version: Constants.expoConfig?.version,
+      });
+    } finally {
+      setReportSending(false);
+    }
     setMessages((prev) => prev.map((m) => (m.id === reporting.message.id ? { ...m, reported: true } : m)));
     setReportDone(outcome === 'sent' ? 'Thanks. Your report was sent.' : 'Thanks. Your report is saved and will be sent when the connection is back.');
   };
@@ -626,7 +655,8 @@ function Chat() {
             </Pressable>
           )}
         </View>
-        {!settings.isPro && !isKeyboardVisible ? <AdBanner isPro={false} /> : null}
+        {/* Kept mounted while the keyboard is up (hidden instead), so typing a message doesn't load a new ad. */}
+        {!settings.isPro ? <AdBanner hidden={isKeyboardVisible} /> : null}
       </KeyboardAvoidingView>
 
       <Modal visible={!!reporting} transparent animationType="fade" onRequestClose={() => setReporting(null)}>
@@ -649,8 +679,8 @@ function Chat() {
                 ))}
                 <TextInput style={[styles.fieldInput, { marginTop: 8 }]} value={reportNote} onChangeText={setReportNote}
                   placeholder="Anything else? (optional)" placeholderTextColor={C.faint} multiline />
-                <Pressable style={[styles.closeBtn, !reportReason && { opacity: 0.4 }]} disabled={!reportReason} onPress={sendReport}>
-                  <Text style={styles.closeText}>Send report</Text>
+                <Pressable style={[styles.closeBtn, (!reportReason || reportSending) && { opacity: 0.4 }]} disabled={!reportReason || reportSending} onPress={sendReport}>
+                  <Text style={styles.closeText}>{reportSending ? 'Sending…' : 'Send report'}</Text>
                 </Pressable>
                 <Pressable style={{ alignItems: 'center', marginTop: 12 }} onPress={() => setReporting(null)}>
                   <Text style={styles.hint}>Cancel</Text>
@@ -699,7 +729,10 @@ function Chat() {
                 <Text style={styles.linkBtnText}>Privacy and your data ›</Text>
               </Pressable>
 
-              <Text style={styles.fieldLabel}>RobinTHood Pro</Text>
+              {/* No Play Billing yet, so Pro is a developer toggle only; a release build must
+                  not show a price or a purchase it can't make. */}
+              {__DEV__ ? (<>
+              <Text style={styles.fieldLabel}>RobinTHood Pro (dev toggle)</Text>
               <Pressable
                 style={[styles.proCard, settings.isPro && styles.proCardActive]}
                 onPress={() => setSettings((s) => ({ ...s, isPro: !s.isPro }))}
@@ -710,8 +743,8 @@ function Chat() {
                 </View>
                 <Text style={styles.proCardDesc}>
                   {settings.isPro
-                    ? 'Ad-free experience active. Unlimited live web searches and priority speed.'
-                    : 'Remove all ads forever, unlock unlimited fast web searches, and support RobinTHood.'}
+                    ? 'Ads are off.'
+                    : 'Turns the ads off. Testing only until Play Billing is set up.'}
                 </Text>
                 <View style={[styles.proCardAction, settings.isPro && { backgroundColor: '#065f46' }]}>
                   <Text style={styles.proCardActionText}>
@@ -719,6 +752,7 @@ function Chat() {
                   </Text>
                 </View>
               </Pressable>
+              </>) : null}
 
               <Text style={styles.fieldLabel}>Language</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
@@ -782,7 +816,12 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.9. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.9. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device. The free version shows Google ads; the ads SDK collects device identifiers, as the privacy policy explains.</Text>
+              {!settings.isPro ? (
+                <Pressable style={[styles.pill, { marginTop: 8, alignItems: 'center' }]} onPress={openAdPrivacyOptions}>
+                  <Text style={styles.optionText}>Ad privacy choices</Text>
+                </Pressable>
+              ) : null}
               <Pressable
                 style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
                 onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
