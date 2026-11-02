@@ -28,8 +28,9 @@ jobs:
         shell: bash
     steps:
       # React Native's native build paths run long; let git check them out.
+      # cmd, not powershell: the PC's execution policy blocks the .ps1 files Actions writes.
       - name: Enable long paths for git
-        shell: powershell
+        shell: cmd
         working-directory: .
         run: git config --global core.longpaths true
 
@@ -37,9 +38,9 @@ jobs:
 
       # The runner runs as SYSTEM, whose PATH lacks Git's bash.
       - name: Put Git Bash on PATH
-        shell: powershell
+        shell: cmd
         working-directory: .
-        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Program Files\Git\bin'
+        run: '>>"%GITHUB_PATH%" echo C:\Program Files\Git\bin'
 
       - uses: actions/setup-node@v4
         with:
