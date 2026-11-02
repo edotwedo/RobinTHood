@@ -14,7 +14,6 @@ export const KEYLESS_ENGINES = [
   { id: 'ovh-120b', label: 'GPT-OSS 120B', model: 'gpt-oss-120b', url: OVH },
   { id: 'ovh-qwen-big', label: 'Qwen 3.5 397B', model: 'Qwen3.5-397B-A17B', url: OVH },
   { id: 'ovh-qwen', label: 'Qwen 3.8 27B', model: 'Qwen3.8-27B', url: OVH },
-  { id: 'kilo-nemotron', label: 'Nemotron 120B', model: 'nvidia/nemotron-3-super-120b-a12b:free', url: KILO },
   { id: 'kilo-cohere', label: 'Cohere North Mini', model: 'cohere/north-mini-code:free', url: KILO },
   { id: 'kilo-auto', label: 'Kilo Auto (Kilo picks)', model: 'kilo-auto/free', url: KILO },
 ];
@@ -53,12 +52,15 @@ function stripThink(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '');
 }
 
-// Read an OpenAI-style SSE stream, calling onChunk with the text so far.
-async function readSSE(res, onChunk, signal) {
+// Read an OpenAI-style SSE stream, calling onChunk with the answer text so far and
+// onThinking with the reasoning so far (thinking models stream that first, often for
+// a minute or more). onAlive fires on every event, thinking included.
+async function readSSE(res, onChunk, signal, onThinking, onAlive) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   let full = '';
+  let thinking = '';
   while (true) {
     if (signal?.aborted) throw new Error('Stopped');
     const { value, done } = await reader.read();
@@ -69,11 +71,18 @@ async function readSSE(res, onChunk, signal) {
     for (const raw of lines) {
       const line = raw.trim();
       if (!line.startsWith('data:')) continue;
+      onAlive?.();
       const data = line.slice(5).trim();
       if (data === '[DONE]') return full;
       try {
         const json = JSON.parse(data);
-        const delta = json.choices?.[0]?.delta?.content ?? json.choices?.[0]?.message?.content;
+        const d = json.choices?.[0]?.delta;
+        const reasoning = d?.reasoning ?? d?.reasoning_content;
+        if (typeof reasoning === 'string' && reasoning.length) {
+          thinking += reasoning;
+          onThinking?.(thinking);
+        }
+        const delta = d?.content ?? json.choices?.[0]?.message?.content;
         if (typeof delta === 'string' && delta.length) {
           full += delta;
           onChunk(stripThink(full));
@@ -86,12 +95,21 @@ async function readSSE(res, onChunk, signal) {
   return full;
 }
 
-async function streamOpenAI({ url, model, headers, messages, onChunk, signal, firstTokenMs = 45000 }) {
+// Free providers rate-limit per phone. After a 429, skip that provider for a minute so
+// the cascade moves straight on to another one instead of hitting the limit again.
+const coolingUntil = new Map();
+const COOLDOWN_MS = 60000;
+
+// idleMs: give up only after this long with nothing at all from the model. Thinking
+// counts as progress, so a model that reasons for two minutes is not cut off.
+async function streamOpenAI({ url, model, headers, messages, onChunk, onThinking, signal, idleMs = 45000 }) {
+  if ((coolingUntil.get(url) || 0) > Date.now()) throw new Error('Rate limited, skipped for a minute');
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
   signal?.addEventListener?.('abort', onAbort);
-  let gotFirst = false;
-  const timer = setTimeout(() => { if (!gotFirst) ctrl.abort(); }, firstTokenMs);
+  let timer;
+  const alive = () => { clearTimeout(timer); timer = setTimeout(() => ctrl.abort(), idleMs); };
+  alive();
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -105,10 +123,11 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, signal, fi
       body: JSON.stringify({ model, stream: true, messages }),
     });
     if (!res.ok) {
+      if (res.status === 429) coolingUntil.set(url, Date.now() + COOLDOWN_MS);
       const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160);
       throw new Error(`HTTP ${res.status} ${body}`);
     }
-    const text = await readSSE(res, (t) => { gotFirst = true; onChunk(t); }, signal);
+    const text = await readSSE(res, onChunk, signal, onThinking, alive);
     const clean = stripThink(text).trim();
     if (!clean) throw new Error('Empty reply');
     return clean;
@@ -160,7 +179,7 @@ export function availableModels(settings) {
   return list;
 }
 
-export function runEngine(id, settings, messages, onChunk, signal) {
+export function runEngine(id, settings, messages, onChunk, signal, onThinking) {
   if (id === 'ollama') {
     return streamOllama({ baseUrl: settings.ollamaUrl, model: settings.ollamaModel, messages, onChunk, signal });
   }
@@ -173,12 +192,12 @@ export function runEngine(id, settings, messages, onChunk, signal) {
         'HTTP-Referer': 'https://edotwedo.github.io/RobinTHood',
         'X-Title': 'RobinTHood Android',
       },
-      messages, onChunk, signal,
+      messages, onChunk, onThinking, signal,
     });
   }
   const e = KEYLESS_ENGINES.find((x) => x.id === id);
   if (!e) throw new Error(`Unknown model ${id}`);
-  return streamOpenAI({ url: e.url, model: e.model, messages, onChunk, signal });
+  return streamOpenAI({ url: e.url, model: e.model, messages, onChunk, onThinking, signal });
 }
 
 export function labelFor(id, settings) {

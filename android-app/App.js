@@ -55,6 +55,15 @@ const C = {
 let idCounter = 0;
 const newId = () => `${Date.now()}-${idCounter++}`;
 
+// The last few lines of a model's running reasoning, cut at a word, for the live panel.
+const THINKING_TAIL_CHARS = 420;
+function thinkingTail(text) {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= THINKING_TAIL_CHARS) return t;
+  const cut = t.slice(-THINKING_TAIL_CHARS);
+  return '…' + cut.slice(cut.indexOf(' ') + 1);
+}
+
 function openLink(url) {
   if (/^https?:\/\//i.test(url)) Linking.openURL(url).catch(() => {});
 }
@@ -288,7 +297,8 @@ function Chat() {
         },
         onEvent: (ev) => {
           if (ev.type === 'text') { setStatus(`Asking ${ev.model}…`); update({ content: ev.text, model: ev.model }); }
-          if (ev.type === 'step') { setStatus(ev.label + '…'); update({ steps: ev.steps, content: '' }); }
+          if (ev.type === 'thinking') { setStatus(`${ev.model} is thinking…`); update({ thinking: ev.text, model: ev.model }); }
+          if (ev.type === 'step') { setStatus(ev.label + '…'); update({ steps: ev.steps, content: '', thinking: '' }); }
           if (ev.type === 'model') update({ model: ev.model });
         },
       });
@@ -301,12 +311,13 @@ function Chat() {
           steps: result.steps,
           note: result.fellBack ? `${labelFor(settings.selectedModel, settings)} failed, used ${result.model}` : undefined,
           pending: false,
+          thinking: undefined,
         });
       } else {
-        update({ content: result.text, model: 'error', error: true, pending: false });
+        update({ content: result.text, model: 'error', error: true, pending: false, thinking: undefined });
       }
     } catch (err) {
-      update({ content: err.message === 'Stopped' ? '(stopped)' : `Error: ${err.message}`, error: true, pending: false });
+      update({ content: err.message === 'Stopped' ? '(stopped)' : `Error: ${err.message}`, error: true, pending: false, thinking: undefined });
     } finally {
       abortRef.current = null;
       setBusy(false);
@@ -402,10 +413,19 @@ function Chat() {
         {item.content ? (
           <FormattedMessage text={item.content} />
         ) : (
-          <View style={styles.loadingRow}>
-            <ActivityIndicator size="small" color={C.green} />
-            <Text style={styles.loadingText}>{status || 'Thinking…'}</Text>
-          </View>
+          <>
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={C.green} />
+              <Text style={styles.loadingText}>{status || 'Thinking…'}</Text>
+            </View>
+            {item.pending && item.thinking ? (
+              // Thinking models reason for up to a few minutes before answering; show the
+              // latest of it live so the wait isn't a blank spinner.
+              <View style={styles.thinkingBox}>
+                <Text style={styles.thinkingText}>{thinkingTail(item.thinking)}</Text>
+              </View>
+            ) : null}
+          </>
         )}
         {item.sources?.length ? (
           <View style={styles.sourcesContainer}>
@@ -807,6 +827,8 @@ const styles = StyleSheet.create({
   note: { color: C.faint, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
   loadingRow: { flexDirection: 'row', alignItems: 'center' },
   loadingText: { color: C.dim, fontSize: 12, marginLeft: 8 },
+  thinkingBox: { marginTop: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: C.border },
+  thinkingText: { color: C.faint, fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg },
   input: { flex: 1, backgroundColor: C.panel, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#f9fafb', fontSize: 15, maxHeight: 140, borderWidth: 1, borderColor: C.border },
   sendBtn: { backgroundColor: C.green, width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
