@@ -157,6 +157,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_B64" ]; then echo "No upload key in secrets; leaving bundle unsigned."; exit 0; fi
+          # Never leave the upload key on the build PC, even if signing fails (Paul-53, review of #19).
+          trap 'rm -f upload.jks' EXIT
           echo "$KEYSTORE_B64" | base64 -d > upload.jks
           cp dist/RobinTHood-unsigned.aab dist/RobinTHood-play.aab
           # Drop the existing signature; Git Bash on Windows has no zip, so use .NET there.

@@ -211,7 +211,21 @@ export async function pageText(url, maxChars = 2500) {
 }
 
 // Search only (no page reading); the model decides which pages to open.
+// DuckDuckGo blocks Cloudflare's IPs, so a worker with no Brave key can only answer from
+// Wikipedia, which is useless for everyday questions ("pizza open late" -> "unusual
+// deaths"). Detect that so the phone can ask DuckDuckGo itself.
+export const isWikipediaOnly = (source) => /^wikipedia/i.test(String(source || ''));
+
+async function phoneSearch(query, lang) {
+  try {
+    return { source: 'DuckDuckGo', attribution: null, results: await searchDuckDuckGo(query, lang) };
+  } catch {
+    return { source: 'DuckDuckGo Lite', attribution: null, results: await searchDuckDuckGoLite(query, lang) };
+  }
+}
+
 export async function searchWeb(query, lang = 'en') {
+  let workerWikipedia = null; // kept as the last resort if DuckDuckGo also fails
   // 1. Try dedicated edge worker first (authenticated POST, edge-cached, bot-immune)
   if (isWorkerAvailable()) {
     try {
@@ -232,11 +246,13 @@ export async function searchWeb(query, lang = 'en') {
           .map((r) => ({ title: stripTags(r.title), url: sanitizeWebUrl(r.url), snippet: stripTags(r.snippet || '') }))
           .filter((r) => r.url);
         if (cleanResults.length) {
-          return {
+          const found = {
             source: json.source || 'Robin Search',
             attribution: json.attribution || null,
             results: cleanResults,
           };
+          if (!isWikipediaOnly(found.source)) return found;
+          workerWikipedia = found;
         }
       }
     } catch {
@@ -244,19 +260,16 @@ export async function searchWeb(query, lang = 'en') {
     }
   }
 
-  // 2. Client-side fallback if worker is unreachable
+  // 2. From the phone: when the worker is unreachable, or it could only offer Wikipedia.
   try {
-    return { source: 'DuckDuckGo', attribution: null, results: await searchDuckDuckGo(query, lang) };
+    const found = await phoneSearch(query, lang);
+    if (found.results.length) return found;
+  } catch {}
+  if (workerWikipedia) return workerWikipedia;
+  try {
+    return { source: 'Wikipedia', attribution: null, results: await searchWikipedia(query, lang) };
   } catch {
-    try {
-      return { source: 'DuckDuckGo Lite', attribution: null, results: await searchDuckDuckGoLite(query, lang) };
-    } catch {
-      try {
-        return { source: 'Wikipedia', attribution: null, results: await searchWikipedia(query, lang) };
-      } catch {
-        return { source: 'None', attribution: null, results: [] };
-      }
-    }
+    return { source: 'None', attribution: null, results: [] };
   }
 }
 

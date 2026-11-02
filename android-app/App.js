@@ -677,7 +677,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.7. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.8. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
               <Pressable
                 style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
                 onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
