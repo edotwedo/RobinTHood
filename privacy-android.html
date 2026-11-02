@@ -21,7 +21,7 @@
 <body>
 <main>
   <h1>RobinTHood for Android: Privacy Policy</h1>
-  <p class="meta">Effective November 1, 2026. Applies to the RobinTHood Android app (com.edotwedo.robinthood), version 0.7.5 and later.</p>
+  <p class="meta">Effective November 2, 2026. Applies to the RobinTHood Android app (com.edotwedo.robinthood), version 0.7.5 and later.</p>
   <div class="card">
     <h2>The short version</h2>
     <p>RobinTHood has no accounts and no analytics. Your chats are saved only on your phone. To answer you, the app sends your messages to the AI service you pick, and, when Web is on, sends searches through our search service. The free version shows a Google ad banner, and Google collects some device data to serve it (see <strong>Ads</strong> below).</p>
@@ -36,7 +36,7 @@
 
     <h2>What is sent, and to whom</h2>
     <ul>
-      <li><strong>AI services.</strong> When you send a message, the app sends your recent conversation and a short instruction to the model you chose, or to the next available free model if that one fails. These are OVHcloud AI Endpoints and the Kilo AI gateway, plus OpenRouter or your own Ollama server if you set one up. Their privacy policies cover what they do with requests.</li>
+      <li><strong>AI services.</strong> When you send a message, the app sends your recent conversation and a short instruction to the model you chose, or to the next available free model if that one fails. These are OVHcloud AI Endpoints and the Kilo AI gateway, plus OpenRouter or your own Ollama server if you set one up. Robin has no AI of its own: it moves between these free services when one is busy, rate limited or down. OVHcloud states on its website that prompts are not stored or used to train models; that is its own statement, and we cannot verify it. Kilo's free models run on partner providers, and some of them may collect or log prompts; Kilo does not tell us which, and "Kilo Auto" and the "Auto" setting can end up there. The app marks any model that may collect your messages with an asterisk (*), and its Privacy screen (Settings, or the link in the first message) explains this, lists what to keep out of chats, and has a short self check that runs only on your phone. Before a message goes to a model marked *, the app looks for things like email addresses, phone numbers, card numbers and API keys, on your phone, and offers to mask them. Their own privacy policies govern what they do with requests.</li>
       <li><strong>Web search.</strong> When Web is on, Robin can write search queries based on your conversation and ask to read web pages it finds. These go to the RobinTHood search service, which runs on Cloudflare. It passes searches to Brave Search, DuckDuckGo or Wikipedia, fetches the pages, and sends back plain text. If the search service can't be reached, searches go straight from your phone to DuckDuckGo or Wikipedia; pages are never fetched from your phone.</li>
     </ul>
     <p>The search service sees your searches, the addresses of pages Robin reads, and your IP address. It uses your IP address only to limit how many requests one connection can make. It keeps no log or database of searches. It caches search results for up to 30 minutes and page text for up to an hour, by the search words or page address, not linked to you. Cloudflare handles this traffic under its own privacy policy.</p>
