@@ -15,6 +15,7 @@ import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFi
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner } from './AdBanner';
 import { parseBlocks, parseInline } from './markdown';
+import { AVOID, FINE, HOW_IT_WORKS, OBFUSCATE, SELF_CHECK, assess, detectSensitive, markFor, maskSensitive, mayCollect, privacyOf } from './privacy';
 
 // Phil's personal build (whole-phone file access) vs the Play Store build.
 const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
@@ -43,7 +44,7 @@ const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
+  content: 'RobinTHood is ready. Free AI, no account. How it works: Robin has no AI of its own. It hops between free services, and we do that work for you. A * next to a model means it may collect your messages. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
   model: 'RobinTHood',
 };
 
@@ -56,6 +57,12 @@ let idCounter = 0;
 const newId = () => `${Date.now()}-${idCounter++}`;
 
 // The last few lines of a model's running reasoning, cut at a word, for the live panel.
+// The reply header only keeps the model's label, so find its engine to get the mark.
+function markForLabel(label, settings) {
+  const m = availableModels(settings).find((x) => x.label === label);
+  return m ? markFor(m.id) : '';
+}
+
 const THINKING_TAIL_CHARS = 420;
 function thinkingTail(text) {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -153,6 +160,71 @@ function FormattedMessage({ text }) {
   );
 }
 
+const TONE_COLOR = { ok: '#34d399', warn: '#fbbf24' };
+
+// Plain-language explanation of how Robin is free, who can see messages, and a short
+// self check. Everything on it is computed on the phone; no answers are stored or sent.
+function PrivacyScreen({ visible, onClose, settings, insetTop }) {
+  const [answers, setAnswers] = useState({});
+  const answered = SELF_CHECK.every((q) => answers[q.id] !== undefined);
+  const result = answered ? assess(answers) : null;
+  const models = availableModels(settings).filter((m) => m.id !== 'auto').concat([{ id: 'auto', label: 'Auto' }]);
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={[styles.overlay, { paddingTop: insetTop + 20 }]}>
+        <View style={styles.card}>
+          <ScrollView>
+            <Text style={styles.cardTitle}>How Robin is free</Text>
+            {HOW_IT_WORKS.map((line, i) => <Text key={i} style={styles.privPara}>{line}</Text>)}
+
+            <Text style={styles.privHead}>Who can see your messages</Text>
+            {models.map((m) => {
+              const pv = privacyOf(m.id);
+              return (
+                <View key={m.id} style={styles.privRow}>
+                  <Text style={styles.privModel}>{m.label}{pv.mark}</Text>
+                  <Text style={[styles.privLevel, { color: TONE_COLOR[pv.tone] }]}>{pv.short}</Text>
+                  <Text style={styles.privNote}>{pv.provider}. {pv.note}</Text>
+                </View>
+              );
+            })}
+
+            <Text style={styles.privHead}>Quick self check</Text>
+            <Text style={styles.privNote}>Five questions. Your answers stay on this phone.</Text>
+            {SELF_CHECK.map((q) => (
+              <View key={q.id} style={{ marginTop: 10 }}>
+                <Text style={styles.privQ}>{q.q}</Text>
+                {q.options.map((o, i) => (
+                  <Pressable key={i} style={[styles.option, answers[q.id] === i && styles.optionActive]} onPress={() => setAnswers((a) => ({ ...a, [q.id]: i }))}>
+                    <Text style={[styles.optionText, answers[q.id] === i && { color: '#fff', fontWeight: '700' }]}>{o}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+            {result ? (
+              <View style={styles.privResult}>
+                <Text style={[styles.privHead, { marginTop: 0, color: result.tier === 'low' ? TONE_COLOR.ok : TONE_COLOR.warn }]}>{result.headline}</Text>
+                <Text style={styles.privPara}>{result.body}</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.privHead}>Keep these out of chats</Text>
+            {AVOID.map((x, i) => <Text key={i} style={styles.privItem}>✕  {x}</Text>)}
+            <Text style={styles.privHead}>Usually fine</Text>
+            {FINE.map((x, i) => <Text key={i} style={styles.privItem}>✓  {x}</Text>)}
+            <Text style={styles.privHead}>How to share less</Text>
+            {OBFUSCATE.map((x, i) => <Text key={i} style={styles.privItem}>•  {x}</Text>)}
+            <Text style={[styles.privNote, { marginTop: 14 }]}>This is general guidance, not legal or security advice. Robin also checks your message for things like emails, phone numbers and card numbers before it goes to a model marked *, and offers to mask them.</Text>
+          </ScrollView>
+          <Pressable style={[styles.pill, { marginTop: 10, alignItems: 'center' }]} onPress={onClose}>
+            <Text style={{ color: C.text, fontWeight: '600' }}>Close</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function Chat() {
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -162,6 +234,7 @@ function Chat() {
   const [status, setStatus] = useState('');
   const [expandedSteps, setExpandedSteps] = useState({});
   const [picker, setPicker] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [reporting, setReporting] = useState(null); // { message, question }
@@ -236,9 +309,27 @@ function Chat() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
-  const send = useCallback(async () => {
-    const text = input.trim();
+  const send = useCallback(async (override) => {
+    // onPress hands us the tap event; only a string means "send exactly this".
+    const checked = typeof override === 'string';
+    const text = (checked ? override : input).trim();
     if (!text || busy) return;
+    if (!checked && mayCollect(settings.selectedModel || 'auto')) {
+      const found = detectSensitive(text);
+      if (found.length) {
+        const what = [...new Set(found.map((f) => f.label))].join(', ');
+        Alert.alert(
+          'Looks like private info',
+          `Your message seems to include: ${what}. The model you're using (marked *) may collect messages.`,
+          [
+            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text) },
+            { text: 'Send anyway', style: 'destructive', onPress: () => send(text) },
+            { text: 'Edit', style: 'cancel' },
+          ],
+        );
+        return;
+      }
+    }
     const userMsg = { id: newId(), role: 'user', content: text };
     const replyId = newId();
     const history = [...messages, userMsg];
@@ -365,7 +456,7 @@ function Chat() {
       <View style={[styles.msg, mine ? styles.userMsg : styles.botMsg]}>
         {!mine && (
           <View style={styles.msgHeader}>
-            <Text style={[styles.modelTag, item.error && { color: C.red }]}>{item.model}</Text>
+            <Text style={[styles.modelTag, item.error && { color: C.red }]}>{item.model}{markForLabel(item.model, settings)}</Text>
             {item.seconds ? <Text style={styles.latency}>{item.seconds.toFixed(1)}s</Text> : null}
             {!item.intro && !item.pending && item.content ? (
               <Pressable style={styles.reportBtn} hitSlop={10} onPress={() => openReport(item)}>
@@ -409,6 +500,11 @@ function Chat() {
               </>
             )}
           </View>
+        ) : null}
+        {item.intro ? (
+          <Pressable style={styles.linkBtn} onPress={() => setPrivacyOpen(true)}>
+            <Text style={styles.linkBtnText}>How Robin is free, and your data ›</Text>
+          </Pressable>
         ) : null}
         {item.content ? (
           <FormattedMessage text={item.content} />
@@ -473,7 +569,7 @@ function Chat() {
             {settings.isPro ? <Text style={styles.proBadge}>PRO</Text> : null}
           </View>
           <Pressable onPress={() => setPicker(true)} hitSlop={8}>
-            <Text style={styles.modelChip} numberOfLines={1}>{labelFor(settings.selectedModel, settings)} ▾</Text>
+            <Text style={styles.modelChip} numberOfLines={1}>{labelFor(settings.selectedModel, settings)}{markFor(settings.selectedModel || 'auto')} ▾</Text>
           </Pressable>
         </View>
         <Pressable
@@ -565,6 +661,8 @@ function Chat() {
         </View>
       </Modal>
 
+      <PrivacyScreen visible={privacyOpen} onClose={() => setPrivacyOpen(false)} settings={settings} insetTop={insets.top} />
+
       <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
         <Pressable style={styles.overlay} onPress={() => setPicker(false)}>
           <View style={styles.card}>
@@ -578,12 +676,16 @@ function Chat() {
                     style={[styles.option, active && styles.optionActive]}
                     onPress={() => { setSettings((s) => ({ ...s, selectedModel: m.id })); setPicker(false); }}
                   >
-                    <Text style={[styles.optionText, active && { color: '#fff', fontWeight: '700' }]}>{m.label}</Text>
+                    <Text style={[styles.optionText, active && { color: '#fff', fontWeight: '700' }]}>{m.label}{markFor(m.id)}</Text>
+                    <Text style={styles.optionNote} numberOfLines={1}>{privacyOf(m.id).short}</Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
-            <Text style={styles.hint}>If the chosen model is down, Robin falls back to the next free one and tells you.</Text>
+            <Text style={styles.hint}>If the chosen model is down, Robin falls back to the next free one and tells you. * = may collect your messages.</Text>
+            <Pressable style={styles.linkBtn} onPress={() => { setPicker(false); setPrivacyOpen(true); }}>
+              <Text style={styles.linkBtnText}>How your data is handled ›</Text>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -593,6 +695,9 @@ function Chat() {
           <View style={styles.card}>
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.cardTitle}>{t('settingsTitle', settings.lang)}</Text>
+              <Pressable style={styles.linkBtn} onPress={() => { setSettingsOpen(false); setPrivacyOpen(true); }}>
+                <Text style={styles.linkBtnText}>Privacy and your data ›</Text>
+              </Pressable>
 
               <Text style={styles.fieldLabel}>RobinTHood Pro</Text>
               <Pressable
@@ -677,7 +782,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.8. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
+              <Text style={styles.hint}>RobinTHood 0.7.9. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device.</Text>
               <Pressable
                 style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
                 onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
@@ -729,6 +834,18 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line },
   title: { color: C.text, fontSize: 18, fontWeight: '800' },
+  optionNote: { color: C.faint, fontSize: 11, marginTop: 2 },
+  linkBtn: { alignSelf: 'flex-start', paddingVertical: 6, marginTop: 6 },
+  linkBtnText: { color: '#60a5fa', fontSize: 13, fontWeight: '600' },
+  privHead: { color: C.text, fontSize: 15, fontWeight: '700', marginTop: 18, marginBottom: 6 },
+  privPara: { color: C.text, fontSize: 14, lineHeight: 20, marginTop: 6 },
+  privRow: { marginTop: 8, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: C.line },
+  privModel: { color: C.text, fontSize: 14, fontWeight: '700' },
+  privLevel: { fontSize: 12, fontWeight: '700', marginTop: 2 },
+  privNote: { color: C.faint, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  privQ: { color: C.text, fontSize: 14, fontWeight: '600', marginBottom: 4 },
+  privResult: { marginTop: 14, padding: 12, borderRadius: 10, backgroundColor: C.panel2 },
+  privItem: { color: C.text, fontSize: 13, lineHeight: 19, marginTop: 4 },
   modelChip: { color: C.green, fontSize: 12, fontWeight: '600', marginTop: 2 },
   headerBtn: { paddingHorizontal: 10, paddingVertical: 6, marginLeft: 6, backgroundColor: C.panel2, borderRadius: 8 },
   headerBtnText: { color: C.dim, fontSize: 13, fontWeight: '600' },
