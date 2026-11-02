@@ -48,8 +48,10 @@ export function buildMessages(history, _unused, extraSystem) {
   return [{ role: 'system', content: system }, ...kept];
 }
 
+// Removes reasoning: closed <think> blocks, a stray </think> with no opener, and a
+// <think> still open (mid-stream), so reasoning never shows in the answer bubble.
 function stripThink(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '');
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').replace(/<think>[\s\S]*$/i, '');
 }
 
 // Read an OpenAI-style SSE stream, calling onChunk with the answer text so far and

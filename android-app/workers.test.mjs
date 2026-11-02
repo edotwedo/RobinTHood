@@ -96,3 +96,28 @@ test('search worker: limits are per install, with a per-IP ceiling', async () =>
   assert.equal(await go('install-dddd'), 429, 'the per-IP ceiling still holds');
   assert.ok(seen.includes('signed:7.7.7.7:install-aaaa') && seen.includes('ip:7.7.7.7'));
 });
+
+test('search worker: oversized bodies are refused before any signature work', async () => {
+  const body = JSON.stringify({ query: 'x'.repeat(5000) });
+  const res = await search.fetch(new Request('https://w/v1/search', { method: 'POST', body, headers: { ...sign(body), 'cf-connecting-ip': '8.8.4.4' } }), { ROBIN_CLIENT_SECRET: SECRET });
+  assert.equal(res.status, 413);
+});
+
+test('nonce store: sweeps walk the whole shard, not just its first keys', async () => {
+  const { NonceStore } = await import('./search-worker/worker.js');
+  const map = new Map();
+  const storage = {
+    get: async (k) => map.get(k), put: async (k, v) => { map.set(k, v); }, delete: async (k) => { for (const x of [].concat(k)) map.delete(x); },
+    list: async ({ limit, startAfter }) => new Map([...map].sort(([a], [b]) => (a < b ? -1 : 1)).filter(([k]) => !startAfter || k > startAfter).slice(0, limit)),
+  };
+  const past = Date.now() - 1000;
+  for (let i = 0; i < 3000; i++) map.set(`n${String(i).padStart(5, '0')}`, past);
+  const store = new NonceStore({ storage });
+  const rnd = Math.random; Math.random = () => 0;
+  try {
+    for (let i = 0; i < 4; i++) await store.fetch(new Request('https://n/claim', { method: 'POST', body: JSON.stringify({ nonce: `fresh-${i}`, ttlSec: 240 }) }));
+  } finally { Math.random = rnd; }
+  const expired = [...map].filter(([k, v]) => k.startsWith('n') && v <= Date.now()).length;
+  assert.equal(expired, 0, 'all 3000 expired nonces swept');
+  assert.equal([...map.keys()].filter((k) => k.startsWith('fresh-')).length, 4, 'live nonces kept');
+});
