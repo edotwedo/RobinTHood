@@ -160,13 +160,13 @@ async function runAction(action, ctx) {
 
 // Runs one model call, falling through the cascade if an engine fails.
 // Sticks with the first engine that works for the rest of the message.
-async function callModel(state, messages, onText, signal) {
+async function callModel(state, messages, onText, signal, onThinking) {
   const errors = [];
   for (let i = state.engineIndex; i < state.order.length; i++) {
     const id = state.order[i];
     if (signal?.aborted) throw new Error('Stopped');
     try {
-      const text = await runEngine(id, state.settings, messages, onText, signal);
+      const text = await runEngine(id, state.settings, messages, onText, signal, (t) => onThinking?.(t, id));
       state.engineIndex = i;
       return { id, text };
     } catch (err) {
@@ -178,7 +178,7 @@ async function callModel(state, messages, onText, signal) {
 }
 
 // ctx: { web: boolean, getFolder: () => Promise<folderUri> }
-// onEvent({ type: 'model'|'step'|'text', ... }) keeps the screen updated.
+// onEvent({ type: 'model'|'step'|'text'|'thinking', ... }) keeps the screen updated.
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
   const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
@@ -206,7 +206,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     }
     const { id, text } = await callModel(state, messages, (partial) => {
       if (finalTurn || !looksLikeAction(partial)) onEvent({ type: 'text', text: partial, model: labelFor(state.order[state.engineIndex], settings) });
-    }, signal);
+    }, signal, (thinking, engineId) => onEvent({ type: 'thinking', text: thinking, model: labelFor(engineId, settings) }));
     usedId = id;
     onEvent({ type: 'model', model: labelFor(id, settings) });
 
