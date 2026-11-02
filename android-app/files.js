@@ -34,6 +34,22 @@ function checkReadable(name, size) {
   if (size > MAX_READ_BYTES) throw new Error(`${name} is ${Math.round(size / 1000)} kB; Robin only reads text files up to ${MAX_READ_BYTES / 1000} kB`);
 }
 
+// The 📎 button: the user picks one text file and its text goes with their message.
+// Any type can be picked (code files often have no text MIME type); checkReadable and the
+// NUL check below turn away what isn't text. Returns null when the user cancels.
+export async function pickTextFile(maxChars = 12000) {
+  const DocumentPicker = require('expo-document-picker');
+  const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
+  if (res.canceled || !res.assets?.length) return null;
+  const { name, size, uri } = res.assets[0];
+  checkReadable(name, size || 0);
+  const text = await readAsStringAsync(uri);
+  if (text.includes('\u0000') || (text.match(/\uFFFD/g) || []).length > text.length / 100) {
+    throw new Error(`${name} is not a text file, so Robin can't read it`);
+  }
+  return { name, text: text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text };
+}
+
 export function cleanName(name) {
   let n = String(name).trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop();
   n = n.replace(/[<>:"|?*\u0000-\u001f]/g, '').trim();

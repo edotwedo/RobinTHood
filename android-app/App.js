@@ -11,7 +11,7 @@ import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
 import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
-import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder } from './files';
+import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder, pickTextFile } from './files';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { parseBlocks, parseInline } from './markdown';
@@ -81,6 +81,15 @@ function writeDetail(action, lang) {
   const body = String(action.body || '').trim();
   const preview = body.length > PREVIEW_CHARS ? `${body.slice(0, PREVIEW_CHARS)}…` : body;
   return `${action.arg}${action.exists ? `\n${t('confirmReplaces', lang)}` : ''}\n\n“${preview}”`;
+}
+
+// A picked file as it goes to the model: after the user's words, in a code fence longer
+// than any run of backticks inside it, so the file can't end the fence early.
+function withAttachment(text, file) {
+  if (!file) return text;
+  const longest = Math.max(0, ...(file.text.match(/`+/g) || []).map((r) => r.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${text}${text ? '\n\n' : ''}[Attached file: ${file.name}]\n${fence}\n${file.text}\n${fence}`;
 }
 
 function openLink(url) {
@@ -242,6 +251,7 @@ function Chat() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [messages, setMessages] = useState([INTRO]);
   const [input, setInput] = useState('');
+  const [attachment, setAttachment] = useState(null); // { name, text } from the 📎 button
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [expandedSteps, setExpandedSteps] = useState({});
@@ -331,7 +341,8 @@ function Chat() {
     // onPress hands us the tap event; only a string means "send exactly this".
     const checked = typeof override === 'string';
     const text = (checked ? override : input).trim();
-    if (!text || busy) return;
+    const file = checked ? opts.file : attachment;
+    if ((!text && !file) || busy) return;
     const collects = mayCollect(settings.selectedModel || 'auto');
     // The earlier chat goes along with every message, so a * model also gets what was
     // typed while a model with no * was picked. Check the user messages it hasn't seen
@@ -339,15 +350,16 @@ function Chat() {
     const unseen = (m) => m.role === 'user' && !m.sharedStar;
     if (!checked && collects) {
       const earlier = messages.filter(unseen).map((m) => m.content).join('\n');
-      const found = detectSensitive(`${earlier}\n${text}`);
+      const found = detectSensitive(`${earlier}\n${text}\n${file?.text || ''}`);
       if (found.length) {
-        const where = detectSensitive(earlier).length ? 'This chat' : 'Your message';
+        const where = detectSensitive(earlier).length ? 'This chat'
+          : file && detectSensitive(file.text).length ? 'Your file' : 'Your message';
         Alert.alert(
           'Looks like private info',
           `${where} seems to include: ${labelsOf(found)}. The model you're using (marked *) may collect messages, including earlier ones in this chat.`,
           [
-            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true }) },
-            { text: 'Send anyway', style: 'destructive', onPress: () => send(text) },
+            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true, file: file && { ...file, text: maskSensitive(file.text).text } }) },
+            { text: 'Send anyway', style: 'destructive', onPress: () => send(text, { file }) },
             { text: 'Edit', style: 'cancel' },
           ],
         );
@@ -357,11 +369,16 @@ function Chat() {
     let prior = messages;
     if (opts.maskEarlier) prior = prior.map((m) => (unseen(m) ? { ...m, content: maskSensitive(m.content).text } : m));
     if (collects) prior = prior.map((m) => (unseen(m) ? { ...m, sharedStar: true } : m));
-    const userMsg = { id: newId(), role: 'user', content: text, ...(collects ? { sharedStar: true } : {}) };
+    // The bubble shows what the user typed and the file's name; the model gets both.
+    const userMsg = {
+      id: newId(), role: 'user', content: withAttachment(text, file),
+      ...(file ? { attachment: file.name, typed: text } : {}), ...(collects ? { sharedStar: true } : {}),
+    };
     const replyId = newId();
     const history = [...prior, userMsg];
     setMessages([...history, { id: replyId, role: 'assistant', content: '', model: labelFor(settings.selectedModel, settings), pending: true }]);
     setInput('');
+    setAttachment(null);
     setBusy(true);
     scrollToEnd();
 
@@ -480,7 +497,16 @@ function Chat() {
       setStatus('');
       scrollToEnd();
     }
-  }, [input, busy, messages, settings, scrollToEnd]);
+  }, [input, attachment, busy, messages, settings, scrollToEnd]);
+
+  const attachFile = async () => {
+    try {
+      const file = await pickTextFile();
+      if (file) setAttachment(file);
+    } catch (err) {
+      Alert.alert('Can\'t attach that file', err.message);
+    }
+  };
 
   const stop = () => {
     abortRef.current?.abort();
@@ -582,7 +608,10 @@ function Chat() {
           </Pressable>
         ) : null}
         {item.content ? (
-          <FormattedMessage text={item.content} />
+          <>
+            {item.attachment ? <Text style={styles.attachChip}>📎 {item.attachment}</Text> : null}
+            <FormattedMessage text={item.attachment ? item.typed : item.content} />
+          </>
         ) : (
           <>
             <View style={styles.loadingRow}>
@@ -681,7 +710,16 @@ function Chat() {
           onContentSizeChange={scrollToEnd}
           keyboardShouldPersistTaps="handled"
         />
+        {attachment ? (
+          <View style={styles.attachBar}>
+            <Text style={styles.attachChip} numberOfLines={1}>📎 {attachment.name}</Text>
+            <Pressable onPress={() => setAttachment(null)} hitSlop={10}><Text style={styles.attachRemove}>✕</Text></Pressable>
+          </View>
+        ) : null}
         <View style={[styles.inputRow, { paddingBottom: isKeyboardVisible ? 8 : Math.max(insets.bottom, 10) }]}>
+          <Pressable style={styles.attachBtn} onPress={attachFile} disabled={busy} hitSlop={6}>
+            <Text style={styles.attachIcon}>📎</Text>
+          </Pressable>
           <TextInput
             style={styles.input}
             value={input}
@@ -696,7 +734,7 @@ function Chat() {
               <Text style={styles.sendText}>■</Text>
             </Pressable>
           ) : (
-            <Pressable style={[styles.sendBtn, !input.trim() && { opacity: 0.4 }]} onPress={send} disabled={!input.trim()}>
+            <Pressable style={[styles.sendBtn, !input.trim() && !attachment && { opacity: 0.4 }]} onPress={send} disabled={!input.trim() && !attachment}>
               <Text style={styles.sendText}>↑</Text>
             </Pressable>
           )}
@@ -1035,6 +1073,11 @@ const styles = StyleSheet.create({
   thinkingBox: { marginTop: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: C.border },
   thinkingText: { color: C.faint, fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg },
+  attachBtn: { width: 36, height: 42, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
+  attachIcon: { fontSize: 20 },
+  attachBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.line },
+  attachChip: { color: C.dim, fontSize: 12, flexShrink: 1, marginBottom: 4 },
+  attachRemove: { color: C.faint, fontSize: 14, marginLeft: 10 },
   input: { flex: 1, backgroundColor: C.panel, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#f9fafb', fontSize: 15, maxHeight: 140, borderWidth: 1, borderColor: C.border },
   sendBtn: { backgroundColor: C.green, width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   sendText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
