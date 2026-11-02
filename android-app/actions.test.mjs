@@ -32,3 +32,9 @@ test('after web text, file actions and unseen links need a tap', () => {
   assert.equal(needsConfirm({ kind: 'OPEN', arg: 'https://seen.example/' }, tainted), false);
   assert.equal(needsConfirm({ kind: 'OPEN', arg: 'https://evil.example/?d=secret' }, tainted), true);
 });
+
+test('a short lead-in still counts as an action; a long answer quoting the syntax does not', () => {
+  assert.deepEqual(parseAction('Let me look that up.\nSEARCH: weather Paris'), { kind: 'SEARCH', arg: 'weather Paris' });
+  const answer = 'Here is how Robin works. '.repeat(8) + '\nSEARCH: example';
+  assert.equal(parseAction(answer), null);
+});

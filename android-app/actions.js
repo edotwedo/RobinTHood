@@ -13,6 +13,8 @@ export const wrapWeb = (text) =>
 const LINE_RE = /^\s*(?:\*\*)?(SEARCH|OPEN|READ|WRITE)(?:\*\*)?\s*:\s*(.+?)\s*$/im;
 const LIST_RE = /^\s*(?:\*\*)?LIST[ _]FILES(?:\*\*)?\s*(?::\s*(.*?))?\s*$/im;
 
+const MAX_PREAMBLE = 150;
+
 const stripQuotes = (s) => s.replace(/^\*+\s*/, '').replace(/^[`"'<]+|[`"'>]+$/g, '').trim();
 
 // Find an action the model asked for. It only counts when the action opens the reply
@@ -23,7 +25,8 @@ export function parseAction(text) {
   const m = list && (!line || list.index < line.index) ? list : line;
   if (!m) return null;
   const before = text.slice(0, m.index).trim();
-  if (before.length > 400) return null;
+  // More than a short lead-in means this is an answer that happens to quote the syntax.
+  if (before.length > MAX_PREAMBLE) return null;
   if (m === list) return { kind: 'LIST', arg: stripQuotes(m[1] || '') };
   const kind = m[1].toUpperCase();
   let arg = stripQuotes(m[2]);
@@ -45,11 +48,11 @@ export function parseAction(text) {
 
 // While streaming, hide text that is turning into an action.
 export function looksLikeAction(partial) {
-  const head = partial.slice(0, 450);
+  const head = partial.slice(0, MAX_PREAMBLE + 50);
   if (LINE_RE.test(head) || LIST_RE.test(head)) return true;
   const lines = partial.split('\n');
   const cur = lines[lines.length - 1].trim().replace(/^\*+/, '').toUpperCase();
-  if (!cur || partial.length >= 450) return !cur && partial.trim() === '';
+  if (!cur || partial.length >= MAX_PREAMBLE + 50) return !cur && partial.trim() === '';
   const starts = (w) => (cur.length <= w.length ? w.startsWith(cur) : cur.startsWith(w));
   return ['SEARCH:', 'OPEN:', 'READ:', 'WRITE:', 'LIST FILES'].some(starts);
 }

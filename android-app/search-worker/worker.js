@@ -12,6 +12,9 @@ const CORS_HEADERS = {
 const REPLAY_WINDOW_SEC = 120;
 const MAX_READ_CHARS = 20000;
 const MAX_REDIRECTS = 5;
+// A real request is a short query or one URL; anything bigger is refused before the HMAC.
+const MAX_BODY_CHARS = 4096;
+const MAX_QUERY_CHARS = 500;
 // Bounds on what /v1/read pulls from a page, so one huge or slow URL can't take the
 // isolate's memory or time from every other request on it.
 const READ_TIMEOUT_MS = 8000;
@@ -96,6 +99,13 @@ function installOf(rawBody) {
 async function signedRequestLimited(env, ip, rawBody) {
   if (await overLimit(env.RATE_LIMITER_IP, `ip:${ip}`, SIGNED_IP_LIMIT_PER_MIN)) return true;
   return overLimit(env.RATE_LIMITER, `signed:${ip}:${installOf(rawBody)}`, SIGNED_LIMIT_PER_MIN);
+}
+
+function tooLarge() {
+  return new Response(JSON.stringify({ error: 'Request too large' }), {
+    status: 413,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  });
 }
 
 function rateLimitResponse() {
@@ -385,7 +395,9 @@ async function extractPageText(url, maxChars = 5000) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    // Cache writes must outlive the response, or the runtime may cancel them.
+    const later = (p) => (ctx?.waitUntil ? ctx.waitUntil(p) : p);
     try {
       if (request.method === 'OPTIONS') {
         return new Response(null, { headers: CORS_HEADERS });
@@ -427,6 +439,7 @@ export default {
         }
 
         const rawBody = await request.text();
+        if (rawBody.length > MAX_BODY_CHARS) return tooLarge();
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
@@ -446,7 +459,7 @@ export default {
           });
         }
 
-        const q = (parsed.query || '').trim();
+        const q = String(parsed.query || '').trim().slice(0, MAX_QUERY_CHARS);
         const lang = (parsed.lang || 'en').toLowerCase();
 
         if (!q) {
@@ -521,7 +534,7 @@ export default {
           },
         });
 
-        cache.put(cacheKey, finalResponse.clone());
+        later(cache.put(cacheKey, finalResponse.clone()));
         return finalResponse;
       }
 
@@ -535,6 +548,7 @@ export default {
         }
 
         const rawBody = await request.text();
+        if (rawBody.length > MAX_BODY_CHARS) return tooLarge();
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
@@ -588,7 +602,7 @@ export default {
 
         // Only cache valid, non-empty text extraction
         if (result.ok && result.text && result.text.length >= 100) {
-          cache.put(cacheKey, finalResponse.clone());
+          later(cache.put(cacheKey, finalResponse.clone()));
         }
         return finalResponse;
       }
@@ -611,6 +625,8 @@ export default {
 // 256 shards for the app's hex UUID nonces, up to 37^2 for other allowed characters.
 // A Durable Object handles one request at a time, so check-then-record is atomic, and
 // every Cloudflare location reaches the same object, which closes cross-location replay.
+const CURSOR = '~sweep-cursor';
+
 export class NonceStore {
   constructor(state) {
     this.state = state;
@@ -630,13 +646,22 @@ export class NonceStore {
     if (expires && expires > now) return new Response('replay', { status: 409 });
     await this.state.storage.put(nonce, now + ttlSec * 1000);
 
-    // Drop expired nonces now and then so a shard never grows without bound.
+    // Drop expired nonces now and then so a shard never grows without bound. Keys come back
+    // sorted, so each sweep picks up where the last stopped (CURSOR) and wraps at the end;
+    // starting from the top every time would never reach most of a big shard.
     if (Math.random() < 0.05) {
+      const cursor = await this.state.storage.get(CURSOR);
+      const page = await this.state.storage.list({ limit: 1000, ...(cursor ? { startAfter: cursor } : {}) });
       const stale = [];
-      for (const [key, exp] of await this.state.storage.list({ limit: 1000 })) {
+      let lastKey;
+      for (const [key, exp] of page) {
+        if (key === CURSOR) continue;
+        lastKey = key;
         if (exp <= now) stale.push(key);
       }
       for (let i = 0; i < stale.length; i += 128) await this.state.storage.delete(stale.slice(i, i + 128));
+      if (page.size < 1000 || !lastKey) await this.state.storage.delete(CURSOR);
+      else await this.state.storage.put(CURSOR, lastKey);
     }
     return new Response('ok');
   }

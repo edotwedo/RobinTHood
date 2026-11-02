@@ -293,6 +293,9 @@ function Chat() {
     } catch {}
   }, [theme, loaded, settings.music, settings.musicVolume]);
   const abortRef = useRef(null);
+  // The answer to an open confirm dialog. Stop answers it "no", so Robin stops at once
+  // instead of waiting on a dialog nobody will tap (the Alert itself can't be closed from code).
+  const pendingAskRef = useRef(null);
 
   // Load saved settings and conversation.
   useEffect(() => {
@@ -394,6 +397,7 @@ function Chat() {
           },
           // After Robin has read the web, a page could be steering it; the user approves each risky step.
           confirm: (action) => new Promise((resolve) => {
+            pendingAskRef.current = () => resolve(false);
             const lang = settings.lang;
             const detail = action.kind === 'OPEN' ? action.arg
               : action.kind === 'LIST' ? (action.arg || t('confirmYourFiles', lang))
@@ -413,6 +417,7 @@ function Chat() {
           // The chosen model (no *) or Home Ollama failed and the next one may collect
           // messages. Resolves 'mask', 'send' or false.
           confirmFallback: ({ from, to, found }) => new Promise((resolve) => {
+            pendingAskRef.current = () => resolve(false);
             const lang = settings.lang;
             let body = fill(t('fallbackBody', lang), { from, to });
             if (found.length) body += `\n\n${fill(t('fallbackFound', lang), { what: labelsOf(found) })}`;
@@ -431,6 +436,7 @@ function Chat() {
           // A file Robin read has private details and the model may collect messages.
           // Resolves 'mask', 'send' or false (keep the file out of the chat).
           confirmShare: ({ name, to, found }) => new Promise((resolve) => {
+            pendingAskRef.current = () => resolve(false);
             const lang = settings.lang;
             setStatus(t('confirmWaiting', lang));
             Alert.alert(
@@ -476,7 +482,11 @@ function Chat() {
     }
   }, [input, busy, messages, settings, scrollToEnd]);
 
-  const stop = () => abortRef.current?.abort();
+  const stop = () => {
+    abortRef.current?.abort();
+    pendingAskRef.current?.();
+    pendingAskRef.current = null;
+  };
 
   const newChat = () => {
     if (busy) stop();
@@ -855,7 +865,7 @@ function Chat() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>RobinTHood 0.7.9. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device. The free version shows Google ads; the ads SDK collects device identifiers, as the privacy policy explains.</Text>
+              <Text style={styles.hint}>RobinTHood {Constants.expoConfig?.version}. When Web Search is enabled, queries are retrieved securely via our edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private keys remain stored locally on your device. The free version shows Google ads; the ads SDK collects device identifiers, as the privacy policy explains.</Text>
               {!settings.isPro ? (
                 <Pressable style={[styles.pill, { marginTop: 8, alignItems: 'center' }]} onPress={openAdPrivacyOptions}>
                   <Text style={styles.optionText}>Ad privacy choices</Text>
