@@ -45,11 +45,10 @@ Built-in safety
 **App category:** Productivity
 **Tags:** AI assistant, chat, search
 
-**Contact email:** (your support address; required)
+**Contact email:** aroundrobin@protonmail.com
 **Privacy policy URL:** https://robinthood-search.phone-liaison.workers.dev/privacy
-(Served by the search worker from `search-worker/privacy.js`. The old phil-projects link was
-a 404. Set `CONTACT_EMAIL` under `[vars]` in `search-worker/wrangler.toml` to show an
-email address; until then it points to GitHub issues.)
+(Served by the search worker from `search-worker/privacy.js`; the contact address comes from
+`CONTACT_EMAIL` in `search-worker/wrangler.toml`. The old phil-projects link was a 404.)
 
 **Graphics** (in this folder)
 - App icon: `icon-512.png` (512×512)
