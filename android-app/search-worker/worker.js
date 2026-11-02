@@ -1,3 +1,5 @@
+import { privacyPage } from './privacy.js';
+
 // RobinTHood Global Search & Page Extraction Infrastructure (Hardened Production Worker)
 // Cloudflare Worker: HMAC app attestation, rate-limiting, edge-cached search, stripped page reader.
 
@@ -411,6 +413,14 @@ export default {
       if (url.pathname === '/' || url.pathname === '/health') {
         return new Response(JSON.stringify({ status: 'ok', service: 'robinthood-search', version: '1.3.0' }), {
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Privacy policy (public; linked from the app's Settings and the Play listing).
+      // CONTACT_EMAIL is a plain [vars] entry in wrangler.toml.
+      if (url.pathname === '/privacy') {
+        return new Response(privacyPage(env.CONTACT_EMAIL || ''), {
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' },
         });
       }
 

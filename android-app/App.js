@@ -919,7 +919,7 @@ function Chat() {
               ) : null}
               <Pressable
                 style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
-                onPress={() => handleOpenSource('https://phil-projects.phone-liaison.workers.dev/privacy.html')}
+                onPress={() => handleOpenSource('https://robinthood-search.phone-liaison.workers.dev/privacy')}
               >
                 <Text style={[styles.optionText, { color: C.green, fontWeight: '600' }]}>
                   🔒 Privacy Policy & Data Disclosures ↗
