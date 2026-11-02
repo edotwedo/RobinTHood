@@ -31,3 +31,7 @@ class_name = "NonceStore"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["NonceStore"]
+
+# Contact address shown on the privacy policy (/privacy).
+[vars]
+CONTACT_EMAIL = "aroundrobin@protonmail.com"
