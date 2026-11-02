@@ -21,10 +21,10 @@
 <body>
 <main>
   <h1>RobinTHood for Android: Privacy Policy</h1>
-  <p class="meta">Effective October 31, 2026 (updated the same day). Applies to the RobinTHood Android app (com.edotwedo.robinthood).</p>
+  <p class="meta">Effective November 1, 2026. Applies to the RobinTHood Android app (com.edotwedo.robinthood), version 0.7.5 and later.</p>
   <div class="card">
     <h2>The short version</h2>
-    <p>RobinTHood has no accounts, no ads, no analytics and no tracking. Your chats are saved only on your phone. To answer you, the app sends your messages to the AI service you pick, and, when Web is on, sends a search to a search engine.</p>
+    <p>RobinTHood has no accounts and no analytics. Your chats are saved only on your phone. To answer you, the app sends your messages to the AI service you pick, and, when Web is on, sends searches through our search service. The free version shows a Google ad banner, and Google collects some device data to serve it (see <strong>Ads</strong> below).</p>
 
     <h2>What stays on your phone</h2>
     <ul>
@@ -37,15 +37,19 @@
     <h2>What is sent, and to whom</h2>
     <ul>
       <li><strong>AI services.</strong> When you send a message, the app sends your recent conversation and a short instruction to the model you chose, or to the next available free model if that one fails. These are OVHcloud AI Endpoints and the Kilo AI gateway, plus OpenRouter or your own Ollama server if you set one up. Their privacy policies cover what they do with requests.</li>
-      <li><strong>Web search.</strong> When Web is on, Robin can write search queries based on your conversation and send them to DuckDuckGo (or Wikipedia if DuckDuckGo fails), and can open web pages to read them, the same way a browser would.</li>
+      <li><strong>Web search.</strong> When Web is on, Robin can write search queries based on your conversation and ask to read web pages it finds. These go to the RobinTHood search service, which runs on Cloudflare. It passes searches to Brave Search, DuckDuckGo or Wikipedia, fetches the pages, and sends back plain text. If the search service can't be reached, searches go straight from your phone to DuckDuckGo or Wikipedia; pages are never fetched from your phone.</li>
     </ul>
-    <p>These requests go straight from your phone to those services. They do not pass through any server of ours (the only exception is a report you choose to send, below). Do not send passwords, card numbers or other information you would not want an AI service to see.</p>
+    <p>The search service sees your searches, the addresses of pages Robin reads, and your IP address. It uses your IP address only to limit how many requests one connection can make. It keeps no log or database of searches. It caches search results for up to 30 minutes and page text for up to an hour, by the search words or page address, not linked to you. Cloudflare handles this traffic under its own privacy policy.</p>
+    <p>AI services see the messages you send to them. Do not send passwords, card numbers or other information you would not want an AI service to see.</p>
+
+    <h2>Ads</h2>
+    <p>The free version shows a banner ad from Google AdMob. The app asks Google for non-personalized ads only. Google may still collect information such as your device's advertising ID, IP address and app usage to serve the ad, measure it and prevent fraud. You can reset or delete your advertising ID in Android Settings &gt; Privacy &gt; Ads. How Google uses this data is described at <a href="https://policies.google.com/technologies/partner-sites">policies.google.com/technologies/partner-sites</a>. Turning on Pro in Settings hides the ad banner.</p>
 
     <h2>Reporting an answer</h2>
     <p>If you tap <strong>Report</strong> on a reply, the app sends that reply, the question before it, the reason you picked, any note you add, the app version and a random install ID to the RobinTHood developer's report service, so the report can be reviewed. Nothing is sent unless you report something.</p>
 
     <h2>Permissions</h2>
-    <p>Internet access, to reach the services above. If you ask Robin to save or read files, Android asks you to pick one folder; the app can use only that folder, and you can change it in Settings. The app does not use your microphone, camera, contacts or location.</p>
+    <p>Internet access, to reach the services above. The advertising ID and Android ad services permissions, which Google's ads library adds (see Ads). If you ask Robin to save or read files, Android asks you to pick one folder; the app can use only that folder, and you can change it in Settings. The app does not use your microphone, camera, contacts or location.</p>
 
     <h2>Children</h2>
     <p>RobinTHood is not directed at children under 13 and does not knowingly collect information from them.</p>
