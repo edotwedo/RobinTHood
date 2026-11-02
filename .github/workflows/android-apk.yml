@@ -14,17 +14,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Builds on Phil's build PC (self-hosted Windows runner "donnas-pc"), which keeps
+  # Gradle, NDK and npm caches warm between runs. Run steps use Git Bash.
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+    runs-on: [self-hosted, Windows, donnas-pc]
+    timeout-minutes: 90
     env:
       # Search worker signing key; app.config.js bakes it into extra.robinSecret.
       ROBIN_CLIENT_SECRET: ${{ secrets.ROBIN_CLIENT_SECRET }}
     defaults:
       run:
         working-directory: android-app
+        shell: bash
     steps:
+      # React Native's native build paths run long; let git check them out.
+      - name: Enable long paths for git
+        shell: powershell
+        working-directory: .
+        run: git config --global core.longpaths true
+
       - uses: actions/checkout@v4
+
+      # The runner runs as SYSTEM, whose PATH lacks Git's bash.
+      - name: Put Git Bash on PATH
+        shell: powershell
+        working-directory: .
+        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Program Files\Git\bin'
 
       - uses: actions/setup-node@v4
         with:
@@ -36,6 +51,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      # Installs the SDK command-line tools and accepts licenses, so Gradle can fetch
+      # the platforms, build-tools, NDK and CMake the app needs (cached after the first run).
+      - uses: android-actions/setup-android@v3
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -67,7 +86,7 @@ jobs:
       # (libraries can add them silently through their own manifests).
       - name: Check Play build permissions
         run: |
-          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          SDK=$(cygpath -u "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME"); AAPT=$( (ls "$SDK"/build-tools/*/aapt "$SDK"/build-tools/*/aapt.exe 2>/dev/null || true) | sort -V | tail -1)
           perms=$("$AAPT" dump permissions dist/RobinTHood.apk)
           echo "$perms"
           for bad in RECORD_AUDIO SYSTEM_ALERT_WINDOW READ_EXTERNAL_STORAGE WRITE_EXTERNAL_STORAGE MANAGE_EXTERNAL_STORAGE FOREGROUND_SERVICE CAMERA ACCESS_FINE_LOCATION READ_CONTACTS; do
@@ -85,7 +104,7 @@ jobs:
           mkdir -p personal
           cp android/app/build/outputs/apk/release/app-release.apk personal/Robin-Phil-allfiles.apk
           sha256sum personal/*
-          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          SDK=$(cygpath -u "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME"); AAPT=$( (ls "$SDK"/build-tools/*/aapt "$SDK"/build-tools/*/aapt.exe 2>/dev/null || true) | sort -V | tail -1)
           perms=$("$AAPT" dump permissions personal/Robin-Phil-allfiles.apk); echo "$perms"
           echo "$perms" | grep -q MANAGE_EXTERNAL_STORAGE || { echo "::error::personal build lacks All files access"; exit 1; }
           if echo "$perms" | grep -qE "RECORD_AUDIO|SYSTEM_ALERT_WINDOW"; then echo "::error::personal build has mic/overlay"; exit 1; fi
@@ -101,7 +120,12 @@ jobs:
           if [ -z "$KEYSTORE_B64" ]; then echo "No upload key in secrets; leaving bundle unsigned."; exit 0; fi
           echo "$KEYSTORE_B64" | base64 -d > upload.jks
           cp dist/RobinTHood-unsigned.aab dist/RobinTHood-play.aab
-          zip -q -d dist/RobinTHood-play.aab 'META-INF/*'
+          # Drop the existing signature; Git Bash on Windows has no zip, so use .NET there.
+          if command -v zip >/dev/null; then
+            zip -q -d dist/RobinTHood-play.aab 'META-INF/*'
+          else
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression; \$z = [IO.Compression.ZipFile]::Open((Resolve-Path 'dist/RobinTHood-play.aab'), 'Update'); @(\$z.Entries | Where-Object { \$_.FullName -like 'META-INF/*' }) | ForEach-Object { \$_.Delete() }; \$z.Dispose()"
+          fi
           jarsigner -sigalg SHA256withRSA -digestalg SHA-256 -keystore upload.jks \
             -storepass "$KEY_PASSWORD" -keypass "$KEY_PASSWORD" dist/RobinTHood-play.aab upload
           rm upload.jks dist/RobinTHood-unsigned.aab
@@ -112,7 +136,9 @@ jobs:
           path: android-app/dist/*
 
       # Draft releases are visible only to people with access to the repo.
+      # Only the main branches publish; a test run on another branch just keeps the artifact.
       - name: Publish personal build to a private draft release
+        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -127,6 +153,7 @@ jobs:
       # Fixed tag so the phone download link never changes. Marked prerelease so the
       # Windows app's /releases/latest update check never picks it up.
       - name: Publish to android-latest prerelease
+        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
