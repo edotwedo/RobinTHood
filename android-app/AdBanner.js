@@ -5,11 +5,11 @@ import mobileAds, { AdsConsent, BannerAd, BannerAdSize, TestIds } from 'react-na
 // Public test IDs for development and verification before live approval
 const AD_UNIT_ID = __DEV__ ? TestIds.ADAPTIVE_BANNER : 'ca-app-pub-3940256099942544/6300978111';
 
-// Built-in fallback sponsor cards if AdMob has no fill or is offline
+// House cards shown when AdMob has no fill or is offline. Only the developer's own
+// projects, labelled as such: no partner, sponsor or audience claims without a deal behind them.
 const SPONSORS = [
-  { text: '★ PARTNER: Neon Serverless Postgres — Zero-wait DBs & autoscaling', url: 'https://neon.tech' },
-  { text: '★ FEATURED: Dualtooth — Instant Bluetooth & Dual Monitor Sync', url: 'https://github.com/edotwedo/Dualtooth' },
-  { text: '★ SPONSOR: Advertise your developer tool to 50k+ AI users', url: 'mailto:sponsor@robincode.dev' },
+  { text: 'From Robin\'s developer: Dualtooth — Bluetooth & dual monitor sync', url: 'https://github.com/edotwedo/Dualtooth' },
+  { text: 'From Robin\'s developer: Mega Zword — one hub for all your AIs (Windows)', url: 'https://github.com/edotwedo/mega-zword' },
 ];
 
 // Google's consent form (UMP) runs once per launch before any ad request; in the EEA and
