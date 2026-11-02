@@ -2,6 +2,7 @@
 // Every request sends the whole conversation (system prompt + recent turns),
 // so the model can see what was said earlier.
 import { fetch } from 'expo/fetch';
+import { IMAGE_BUDGET_CHARS, withImages } from './photos';
 
 const OVH = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions';
 const KILO = 'https://ai-gateway.kilo.ai/api/v1/chat/completions';
@@ -10,13 +11,18 @@ const OPENROUTER = 'https://openrouter.ai/api/v1/chat/completions';
 // Free, keyless engines. Order here is the Auto cascade order.
 // kilo-auto lets Kilo pick the model (that's where unwanted picks come from),
 // so it is last.
+// vision: tested to read photos (2026-11-02). Only these are tried for a message with a photo.
 export const KEYLESS_ENGINES = [
   { id: 'ovh-120b', label: 'GPT-OSS 120B', model: 'gpt-oss-120b', url: OVH },
-  { id: 'ovh-qwen-big', label: 'Qwen 3.5 397B', model: 'Qwen3.5-397B-A17B', url: OVH },
+  { id: 'ovh-qwen-big', label: 'Qwen 3.5 397B', model: 'Qwen3.5-397B-A17B', url: OVH, vision: true },
   { id: 'ovh-qwen', label: 'Qwen 3.8 27B', model: 'Qwen3.8-27B', url: OVH },
+  { id: 'ovh-qwen-vl', label: 'Qwen 2.5 VL 72B (photos)', model: 'Qwen2.5-VL-72B-Instruct', url: OVH, vision: true },
   { id: 'kilo-cohere', label: 'Cohere North Mini', model: 'cohere/north-mini-code:free', url: KILO },
-  { id: 'kilo-auto', label: 'Kilo Auto (Kilo picks)', model: 'kilo-auto/free', url: KILO },
+  { id: 'kilo-auto', label: 'Kilo Auto (Kilo picks)', model: 'kilo-auto/free', url: KILO, vision: true },
 ];
+
+// Whether a free engine is known to read photos.
+export const canSee = (id) => Boolean(KEYLESS_ENGINES.find((e) => e.id === id)?.vision);
 
 export const SYSTEM_PROMPT =
   'You are Robin, the assistant inside the RobinTHood app. Be direct and useful. ' +
@@ -31,11 +37,11 @@ const HISTORY_CHAR_BUDGET = 24000;
 export function buildMessages(history, _unused, extraSystem) {
   const turns = history
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && m.content && !m.error && !m.intro)
-    .map((m) => ({ role: m.role, content: m.content }));
+    .map((m) => ({ role: m.role, content: m.content, image: m.image }));
   const kept = [];
   let used = 0;
   for (let i = turns.length - 1; i >= 0; i--) {
-    used += turns[i].content.length;
+    used += turns[i].content.length + (turns[i].image ? IMAGE_BUDGET_CHARS : 0);
     if (used > HISTORY_CHAR_BUDGET && kept.length > 0) break;
     kept.unshift(turns[i]);
   }
@@ -45,7 +51,7 @@ export function buildMessages(history, _unused, extraSystem) {
   // One system message: some providers reject more than one.
   let system = `${SYSTEM_PROMPT} Today is ${today}.`;
   if (extraSystem) system += `\n\n${extraSystem}`;
-  return [{ role: 'system', content: system }, ...kept];
+  return [{ role: 'system', content: system }, ...withImages(kept)];
 }
 
 // Removes reasoning: closed <think> blocks, a stray </think> with no opener, and a
@@ -140,13 +146,21 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, onThinking
   }
 }
 
+function toOllama(m) {
+  if (!Array.isArray(m.content)) return m;
+  const text = m.content.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+  const images = m.content.filter((p) => p.type === 'image_url').map((p) => p.image_url.url.replace(/^data:[^,]*,/, ''));
+  return { role: m.role, content: text, images };
+}
+
 async function streamOllama({ baseUrl, model, messages, onChunk, signal }) {
   const url = baseUrl.replace(/\/+$/, '') + '/api/chat';
   const res = await fetch(url, {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: model || 'llama3.1', stream: true, messages }),
+    // Ollama takes photos as a base64 list beside the text, not as content parts.
+    body: JSON.stringify({ model: model || 'llama3.1', stream: true, messages: messages.map(toOllama) }),
   });
   if (!res.ok) throw new Error(`Ollama HTTP ${res.status}`);
   const reader = res.body.getReader();
@@ -209,14 +223,18 @@ export function labelFor(id, settings) {
 
 // Try the chosen model; if it fails, fall through the rest of the cascade.
 // Chosen model first, then the free cascade.
-export function engineOrder(settings) {
+// With { vision: true } (a photo is in the request) only engines known to read photos.
+// The user's own Ollama or OpenRouter model is unknown, so it is tried only when it is
+// the one they picked: a text-only model there would ignore the photo and guess.
+export function engineOrder(settings, { vision = false } = {}) {
   const chosen = settings.selectedModel || 'auto';
   const cascade = [];
   if (chosen !== 'auto') cascade.push(chosen);
   if (settings.ollamaUrl) cascade.push('ollama');
   for (const e of KEYLESS_ENGINES) cascade.push(e.id);
   if (settings.openRouterKey) cascade.push('openrouter');
-  return [...new Set(cascade)];
+  const own = (id) => id === chosen && (id === 'ollama' || id === 'openrouter');
+  return [...new Set(cascade)].filter((id) => !vision || canSee(id) || own(id));
 }
 
 export async function complete({ history, settings, onChunk, signal }) {

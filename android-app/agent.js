@@ -7,7 +7,8 @@
 //   SEARCH: <query>        OPEN: <url>
 //   LIST FILES             READ: <file name>
 //   WRITE: <file name>  (the file's contents follow on the next lines)
-import { buildMessages, engineOrder, labelFor, runEngine } from './engines';
+import { buildMessages, canSee, engineOrder, labelFor, runEngine } from './engines';
+import { hasImage, mapText } from './photos';
 import { pageRead, searchWeb } from './web';
 import { existsAll, fileExists, listAll, listFiles, readAll, readFile, writeAll, writeFile } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
@@ -150,7 +151,7 @@ async function fallbackAllowed(state, messages, id, signal) {
   }
   if (choice === 'mask') {
     state.mask = true;
-    for (const m of messages) if (m.role !== 'system') m.content = maskSensitive(m.content).text;
+    for (const m of messages) if (m.role !== 'system') m.content = mapText(m.content, (s) => maskSensitive(s).text);
   }
   state.fallbackOk = true;
   return true;
@@ -185,7 +186,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
   const started = Date.now();
   const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
   const state = {
-    settings, ctx, chosen: settings.selectedModel || 'auto', order: engineOrder(settings), engineIndex: 0,
+    settings, ctx, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
     webTurns: new Set(), fallbackOk: false, fallbackDeclined: false, mask: false,
   };
   const steps = [];
@@ -221,6 +222,8 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         ok: true, id, model: labelFor(id, settings), text: text.trim(), steps, sources: dedupe(sources), files,
         seconds: (Date.now() - started) / 1000,
         fellBack: settings.selectedModel !== 'auto' && id !== settings.selectedModel,
+        // The chosen model can't read photos, so another answered: not a failure.
+        forPhoto: hasImage(messages) && settings.selectedModel !== 'auto' && id !== settings.selectedModel && !canSee(settings.selectedModel),
       };
     }
 
