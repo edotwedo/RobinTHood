@@ -76,6 +76,25 @@ jobs:
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
+      # React Native's C++ object paths exceed Windows' 260-character limit. The ninja in
+      # the SDK's CMake 3.22.1 is 1.10.2, which can't use long paths; 1.12+ can (Windows
+      # LongPathsEnabled is on). Install CMake up front and swap in ninja 1.12.1, once.
+      - name: Long-path ninja for the C++ build
+        working-directory: .
+        run: |
+          SDKU=$(cygpath -u "$ANDROID_HOME")
+          NINJA="$SDKU/cmake/3.22.1/bin/ninja.exe"
+          [ -f "$NINJA" ] || "$SDKU/cmdline-tools/latest/bin/sdkmanager.bat" --sdk_root="$ANDROID_HOME" "cmake;3.22.1" > /dev/null
+          if [ "$("$NINJA" --version)" != "1.12.1" ]; then
+            ZIP="$(cygpath -u "$RUNNER_TEMP")/ninja-win.zip"
+            curl -fsSL -o "$ZIP" https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip
+            OUT="$(cygpath -u "$RUNNER_TEMP")/ninja-new" && rm -rf "$OUT" && mkdir -p "$OUT"
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory('$(cygpath -w "$ZIP")', '$(cygpath -w "$OUT")')"
+            cp "$NINJA" "$NINJA.1.10.2.bak" 2>/dev/null || true
+            cp "$OUT/ninja.exe" "$NINJA"
+          fi
+          "$NINJA" --version
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Install JS dependencies
