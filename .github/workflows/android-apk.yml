@@ -53,9 +53,28 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # Installs the SDK command-line tools and accepts licenses, so Gradle can fetch
-      # the platforms, build-tools, NDK and CMake the app needs (cached after the first run).
-      - uses: android-actions/setup-android@v3
+      # Installs the SDK command-line tools and accepts licenses, so Gradle can fetch the
+      # platforms, build-tools, NDK and CMake the app needs. The SDK lives in D:\android-sdk
+      # so it survives between runs. (android-actions/setup-android can't unpack on this
+      # runner: Expand-Archive rejects its extension-less download.)
+      - name: Android SDK (persistent on the build PC)
+        working-directory: .
+        run: |
+          SDK='D:\android-sdk'
+          SDKU=$(cygpath -u "$SDK")
+          TOOLS="$SDKU/cmdline-tools/latest/bin/sdkmanager.bat"
+          if [ ! -f "$TOOLS" ]; then
+            ZIP="$(cygpath -u "$RUNNER_TEMP")/cmdline-tools.zip"
+            curl -fsSL -o "$ZIP" https://dl.google.com/android/repository/commandlinetools-win-12266719_latest.zip
+            rm -rf "$SDKU/cmdline-tools/tmp" && mkdir -p "$SDKU/cmdline-tools"
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory('$(cygpath -w "$ZIP")', '$SDK\cmdline-tools\tmp')"
+            mv "$SDKU/cmdline-tools/tmp/cmdline-tools" "$SDKU/cmdline-tools/latest"
+            rm -rf "$SDKU/cmdline-tools/tmp"
+          fi
+          yes | "$TOOLS" --sdk_root="$SDK" --licenses > /dev/null || true
+          ls "$SDKU/licenses"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
 
