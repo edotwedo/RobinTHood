@@ -21,6 +21,7 @@ const ENGINE_PRIVACY = {
   'ovh-120b': { level: 'stated', provider: 'OVHcloud', note: OVH_NOTE },
   'ovh-qwen-big': { level: 'stated', provider: 'OVHcloud', note: OVH_NOTE },
   'ovh-qwen': { level: 'stated', provider: 'OVHcloud', note: OVH_NOTE },
+  'ovh-qwen-vl': { level: 'stated', provider: 'OVHcloud', note: OVH_NOTE },
   'kilo-cohere': { level: 'may-collect', provider: 'Kilo (free models)', note: KILO_NOTE },
   'kilo-auto': { level: 'may-collect', provider: 'Kilo (free models)', note: KILO_NOTE },
   ollama: { level: 'private', provider: 'Your own Ollama server', note: 'Runs on a computer you control. Robin does not send these messages anywhere else.' },

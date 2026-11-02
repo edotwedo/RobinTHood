@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Image, Keyboard, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,8 @@ import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
 import { flushReports, REPORT_REASONS, submitReport } from './report';
 import Constants from 'expo-constants';
-import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder, pickTextFile } from './files';
+import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder, pickAttachment } from './files';
+import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { parseBlocks, parseInline } from './markdown';
@@ -87,6 +88,7 @@ function writeDetail(action, lang) {
 // than any run of backticks inside it, so the file can't end the fence early.
 function withAttachment(text, file) {
   if (!file) return text;
+  if (file.kind === 'image') return text || DEFAULT_PHOTO_PROMPT;
   const longest = Math.max(0, ...(file.text.match(/`+/g) || []).map((r) => r.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
   return `${text}${text ? '\n\n' : ''}[Attached file: ${file.name}]\n${fence}\n${file.text}\n${fence}`;
@@ -251,7 +253,7 @@ function Chat() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [messages, setMessages] = useState([INTRO]);
   const [input, setInput] = useState('');
-  const [attachment, setAttachment] = useState(null); // { name, text } from the 📎 button
+  const [attachment, setAttachment] = useState(null); // from the 📎 button: { kind: 'text', name, text } or { kind: 'image', name, base64 }
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [expandedSteps, setExpandedSteps] = useState({});
@@ -330,7 +332,7 @@ function Chat() {
   }, [settings, loaded]);
 
   useEffect(() => {
-    if (loaded && !busy) AsyncStorage.setItem(KEYS.chat, JSON.stringify(messages.slice(-200))).catch(() => {});
+    if (loaded && !busy) AsyncStorage.setItem(KEYS.chat, JSON.stringify(keepRecentImages(messages.slice(-200)))).catch(() => {});
   }, [messages, loaded, busy]);
 
   const scrollToEnd = useCallback(() => {
@@ -358,7 +360,7 @@ function Chat() {
           'Looks like private info',
           `${where} seems to include: ${labelsOf(found)}. The model you're using (marked *) may collect messages, including earlier ones in this chat.`,
           [
-            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true, file: file && { ...file, text: maskSensitive(file.text).text } }) },
+            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true, file: file?.kind === 'text' ? { ...file, text: maskSensitive(file.text).text } : file }) },
             { text: 'Send anyway', style: 'destructive', onPress: () => send(text, { file }) },
             { text: 'Edit', style: 'cancel' },
           ],
@@ -372,7 +374,8 @@ function Chat() {
     // The bubble shows what the user typed and the file's name; the model gets both.
     const userMsg = {
       id: newId(), role: 'user', content: withAttachment(text, file),
-      ...(file ? { attachment: file.name, typed: text } : {}), ...(collects ? { sharedStar: true } : {}),
+      ...(file ? { attachment: file.name, typed: text } : {}), ...(file?.kind === 'image' ? { image: file.base64 } : {}),
+      ...(collects ? { sharedStar: true } : {}),
     };
     const replyId = newId();
     const history = [...prior, userMsg];
@@ -482,7 +485,8 @@ function Chat() {
           seconds: result.seconds,
           sources: result.sources,
           steps: result.steps,
-          note: result.fellBack ? `${labelFor(settings.selectedModel, settings)} failed, used ${result.model}` : undefined,
+          note: result.forPhoto ? `${labelFor(settings.selectedModel, settings)} can't see photos, so ${result.model} answered`
+            : result.fellBack ? `${labelFor(settings.selectedModel, settings)} failed, used ${result.model}` : undefined,
           pending: false,
           thinking: undefined,
         });
@@ -501,7 +505,7 @@ function Chat() {
 
   const attachFile = async () => {
     try {
-      const file = await pickTextFile();
+      const file = await pickAttachment();
       if (file) setAttachment(file);
     } catch (err) {
       Alert.alert('Can\'t attach that file', err.message);
@@ -609,7 +613,11 @@ function Chat() {
         ) : null}
         {item.content ? (
           <>
-            {item.attachment ? <Text style={styles.attachChip}>📎 {item.attachment}</Text> : null}
+            {item.image ? (
+              <Image source={{ uri: `data:image/jpeg;base64,${item.image}` }} style={styles.photo} resizeMode="cover" />
+            ) : item.imageDropped ? (
+              <Text style={styles.attachChip}>📷 {item.attachment} (older photo, not kept)</Text>
+            ) : item.attachment ? <Text style={styles.attachChip}>📎 {item.attachment}</Text> : null}
             <FormattedMessage text={item.attachment ? item.typed : item.content} />
           </>
         ) : (
@@ -712,7 +720,7 @@ function Chat() {
         />
         {attachment ? (
           <View style={styles.attachBar}>
-            <Text style={styles.attachChip} numberOfLines={1}>📎 {attachment.name}</Text>
+            <Text style={styles.attachChip} numberOfLines={1}>{attachment.kind === 'image' ? '📷' : '📎'} {attachment.name}</Text>
             <Pressable onPress={() => setAttachment(null)} hitSlop={10}><Text style={styles.attachRemove}>✕</Text></Pressable>
           </View>
         ) : null}
@@ -1075,6 +1083,7 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg },
   attachBtn: { width: 36, height: 42, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
   attachIcon: { fontSize: 20 },
+  photo: { width: 200, height: 200, borderRadius: 8, marginBottom: 6 },
   attachBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.line },
   attachChip: { color: C.dim, fontSize: 12, flexShrink: 1, marginBottom: 4 },
   attachRemove: { color: C.faint, fontSize: 14, marginLeft: 10 },

@@ -5,6 +5,7 @@
 // not quietly hand the message to a service that may collect it; and a message meant for
 // the user's own Ollama must not quietly leave their computer at all.
 import { privacyOf } from './privacy.js';
+import { textOf } from './photos.js';
 
 const RANK = { private: 0, stated: 1, 'may-collect': 2 };
 const rankOf = (id) => RANK[privacyOf(id).level] ?? RANK['may-collect'];
@@ -23,6 +24,6 @@ export function fallbackNeedsConsent(chosen, toId) {
 export function userTextOf(messages, webTurns = new Set()) {
   return messages
     .filter((m) => m.role === 'user' && !webTurns.has(m))
-    .map((m) => String(m.content || ''))
+    .map((m) => textOf(m.content))
     .join('\n');
 }
