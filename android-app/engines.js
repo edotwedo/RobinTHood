@@ -95,15 +95,16 @@ async function readSSE(res, onChunk, signal, onThinking, onAlive) {
   return full;
 }
 
-// Free providers rate-limit per phone. After a 429, skip that provider for a minute so
-// the cascade moves straight on to another one instead of hitting the limit again.
+// Free providers rate-limit per phone, and OVH does it per model (2 requests a minute
+// each), so after a 429 only that model is skipped for a minute; the other OVH models
+// are still tried before the cascade moves on to another provider.
 const coolingUntil = new Map();
 const COOLDOWN_MS = 60000;
 
 // idleMs: give up only after this long with nothing at all from the model. Thinking
 // counts as progress, so a model that reasons for two minutes is not cut off.
 async function streamOpenAI({ url, model, headers, messages, onChunk, onThinking, signal, idleMs = 45000 }) {
-  if ((coolingUntil.get(url) || 0) > Date.now()) throw new Error('Rate limited, skipped for a minute');
+  if ((coolingUntil.get(`${url}|${model}`) || 0) > Date.now()) throw new Error('Rate limited, skipped for a minute');
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
   signal?.addEventListener?.('abort', onAbort);
@@ -123,7 +124,7 @@ async function streamOpenAI({ url, model, headers, messages, onChunk, onThinking
       body: JSON.stringify({ model, stream: true, messages }),
     });
     if (!res.ok) {
-      if (res.status === 429) coolingUntil.set(url, Date.now() + COOLDOWN_MS);
+      if (res.status === 429) coolingUntil.set(`${url}|${model}`, Date.now() + COOLDOWN_MS);
       const body = (await res.text()).replace(/\s+/g, ' ').slice(0, 160);
       throw new Error(`HTTP ${res.status} ${body}`);
     }
