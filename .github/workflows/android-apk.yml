@@ -165,7 +165,7 @@ jobs:
           if command -v zip >/dev/null; then
             zip -q -d dist/RobinTHood-play.aab 'META-INF/*'
           else
-            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression; \$z = [IO.Compression.ZipFile]::Open((Resolve-Path 'dist/RobinTHood-play.aab'), 'Update'); @(\$z.Entries | Where-Object { \$_.FullName -like 'META-INF/*' }) | ForEach-Object { \$_.Delete() }; \$z.Dispose()"
+            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem; \$z = [IO.Compression.ZipFile]::Open((Resolve-Path 'dist/RobinTHood-play.aab'), 'Update'); @(\$z.Entries | Where-Object { \$_.FullName -like 'META-INF/*' }) | ForEach-Object { \$_.Delete() }; \$z.Dispose()"
           fi
           jarsigner -sigalg SHA256withRSA -digestalg SHA-256 -keystore upload.jks \
             -storepass "$KEY_PASSWORD" -keypass "$KEY_PASSWORD" dist/RobinTHood-play.aab upload
