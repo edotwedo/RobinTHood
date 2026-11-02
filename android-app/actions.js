@@ -79,3 +79,20 @@ export function needsConfirm(action, taint) {
   if (action.kind === 'OPEN') return !taint.safeUrls.has(action.arg);
   return true;
 }
+
+// Some models (GPT-OSS especially) open the answer with a sentence or two of their own
+// plan: "Time is limited. I'll answer with ... and note sources." That is not for the user.
+// Only leading sentences that talk about answering, searching or sources are removed, so
+// an answer that merely starts with "I'll" stays whole.
+const PLAN_SENTENCE = /^(?:time is (?:limited|short|up)|we (?:need|should|must|have|can)|i (?:need|should|must|will|'ll|can)|i'll|let me|let's|now (?:i|we)|ok(?:ay)?|alright|the user (?:wants|asks|asked|is asking))\b[^.!?\n]*[.!?]/i;
+const PLAN_WORDS = /\b(answer|respond|reply|search|results?|sources?|pages?|user|final|plausible|time is)\b/i;
+
+export function stripPlanning(text) {
+  let out = String(text || '');
+  for (let i = 0; i < 3; i++) {
+    const m = out.match(PLAN_SENTENCE);
+    if (!m || !PLAN_WORDS.test(m[0])) break;
+    out = out.slice(m[0].length).replace(/^\s+/, '');
+  }
+  return out || String(text || '');
+}
