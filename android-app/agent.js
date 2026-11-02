@@ -13,7 +13,7 @@ import { pageRead, searchWeb } from './web';
 import { existsAll, fileExists, listAll, listFiles, readAll, readFile, writeAll, writeFile } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, maskSensitive, mayCollect } from './privacy';
-import { looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, urlsIn, wrapWeb } from './actions';
+import { looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, urlsIn, wrapFile, wrapWeb } from './actions';
 
 export { needsConfirm, parseAction, stepLabel };
 
@@ -84,7 +84,7 @@ async function writeTargetExists(action, ctx) {
 // Private details in a file Robin read, about to go to a model that may collect them:
 // the user decides (mask, send, or keep the file out). Returns the RESULT text.
 async function shareFileText(state, action, text) {
-  const contents = (body) => `Contents of ${action.arg}:\n\n${body}`;
+  const contents = (body) => `Contents of ${action.arg}:\n\n${wrapFile(body)}`;
   if (state.mask) return contents(text);
   const engine = state.order[state.engineIndex];
   if (!mayCollect(state.chosen) && !mayCollect(engine)) return contents(text);
@@ -198,8 +198,9 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
   // page planted there can steer this message too: start tainted. Its sources were
   // shown to the user under that reply, so OPENing them again needs no tap.
   const earlierSources = history.filter((m) => m.role === 'assistant' && m.sources?.length).flatMap((m) => m.sources);
+  const hasUntrustedInput = earlierSources.length > 0 || history.some((m) => m.attachment || m.image);
   const taint = {
-    web: earlierSources.length > 0,
+    web: hasUntrustedInput,
     safeUrls: new Set([
       ...history.filter((m) => m.role === 'user').flatMap((m) => urlsIn(String(m.content || ''))),
       ...earlierSources.map((s) => s.url),
@@ -246,7 +247,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         if (result.fileBody !== undefined) result = { text: await shareFileText(state, action, result.fileBody) };
         if (result.sources) sources.push(...result.sources);
         if (result.file) files.push(result.file);
-        if (action.kind === 'SEARCH' || action.kind === 'OPEN') {
+        if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ') {
           taint.web = true;
           if (action.kind === 'SEARCH') (result.sources || []).forEach((s) => taint.safeUrls.add(s.url));
         }

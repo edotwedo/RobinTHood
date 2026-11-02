@@ -48,13 +48,13 @@ const luhn = (digits) => {
 };
 
 const FINDERS = [
-  { type: 'secret', label: 'API key or token', re: /(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})(?![A-Za-z0-9_-])/g },
-  { type: 'card', label: 'card number', re: /\b(?:\d[ -]?){13,19}\b/g, ok: (m) => { const d = m.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); } },
-  { type: 'ssn', label: 'Social Security number', re: /\b\d{3}-\d{2}-\d{4}\b/g },
-  { type: 'email', label: 'email address', re: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi },
-  { type: 'password', label: 'password or PIN', re: /\b(?:password|passcode|passphrase|pin)\s*(?:is|:|=)\s*\S+/gi },
+  { type: 'secret', label: 'API key or token', re: /(?:(?:sk|rk)[-_][A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|ya29\.[0-9A-Za-z_-]+|Bearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})(?![A-Za-z0-9_-])/g },
+  { type: 'card', label: 'card number', re: /(?<!\d)(?:\d[ -]?){13,19}\b/g, ok: (m) => { const d = m.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); } },
+  { type: 'ssn', label: 'Social Security number', re: /(?:\b\d{3}-\d{2}-\d{4}\b|\b\d{3}\s\d{2}\s\d{4}\b)/g },
+  { type: 'email', label: 'email address', re: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]+\.[A-Z]{2,}/gi },
+  { type: 'password', label: 'password or PIN', re: /\b(?:password|passcode|passphrase|pin|pw)\s*(?:is|:|=|(?<=\bpin\s+))\s*\S+/gi },
   { type: 'phone', label: 'phone number', re: /(?<![\w.])(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g },
-  { type: 'address', label: 'street address', re: /\b\d{1,5}\s+(?:[A-Z][a-z]+\s){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b\.?/g },
+  { type: 'address', label: 'street address', re: /\b\d{1,5}\s+(?:[A-Za-z]+\s){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b\.?/gi },
 ];
 
 export function detectSensitive(text) {

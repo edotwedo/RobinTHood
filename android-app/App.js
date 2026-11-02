@@ -16,6 +16,7 @@ import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { parseBlocks, parseInline } from './markdown';
+import { wrapFile } from './actions';
 import { AVOID, FINE, HOW_IT_WORKS, OBFUSCATE, SELF_CHECK, assess, detectSensitive, markFor, maskSensitive, mayCollect, privacyOf } from './privacy';
 
 // Phil's personal build (whole-phone file access) vs the Play Store build.
@@ -89,9 +90,10 @@ function writeDetail(action, lang) {
 function withAttachment(text, file) {
   if (!file) return text;
   if (file.kind === 'image') return text || DEFAULT_PHOTO_PROMPT;
-  const longest = Math.max(0, ...(file.text.match(/`+/g) || []).map((r) => r.length));
+  const body = wrapFile(file.text);
+  const longest = Math.max(0, ...(body.match(/`+/g) || []).map((r) => r.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${text}${text ? '\n\n' : ''}[Attached file: ${file.name}]\n${fence}\n${file.text}\n${fence}`;
+  return `${text}${text ? '\n\n' : ''}[Attached file: ${file.name}]\n${fence}\n${body}\n${fence}`;
 }
 
 function openLink(url) {
@@ -352,10 +354,13 @@ function Chat() {
     const unseen = (m) => m.role === 'user' && !m.sharedStar;
     if (!checked && collects) {
       const earlier = messages.filter(unseen).map((m) => m.content).join('\n');
-      const found = detectSensitive(`${earlier}\n${text}\n${file?.text || ''}`);
+      const earlierFound = earlier ? detectSensitive(earlier) : [];
+      const textFound = text ? detectSensitive(text) : [];
+      const fileFound = (file && file.text) ? detectSensitive(file.text) : [];
+      const found = [...earlierFound, ...textFound, ...fileFound];
       if (found.length) {
-        const where = detectSensitive(earlier).length ? 'This chat'
-          : file && detectSensitive(file.text).length ? 'Your file' : 'Your message';
+        const where = earlierFound.length ? 'This chat'
+          : fileFound.length ? 'Your file' : 'Your message';
         Alert.alert(
           'Looks like private info',
           `${where} seems to include: ${labelsOf(found)}. The model you're using (marked *) may collect messages, including earlier ones in this chat.`,

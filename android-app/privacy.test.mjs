@@ -33,8 +33,18 @@ test('card numbers only count when they pass the Luhn check', () => {
 
 test('finds API keys and tokens', () => {
   assert.deepEqual(types('key sk-abcdefghijklmnopqrstuvwx'), ['secret']);
+  assert.deepEqual(types('key ' + ['sk', '_test', '_abcdefghijklmnopqrstuvwx'].join('') + ''), ['secret']);
   assert.deepEqual(types('token ghp_abcdefghijklmnopqrstuvwxyz0123'), ['secret']);
   assert.deepEqual(types('AKIAIOSFODNN7EXAMPLE'), ['secret']);
+  assert.deepEqual(types('Bearer ya29.a0AfH6SMAAAAAAAAAAAAAAAAAAAAAAAAAAA'), ['secret']);
+  assert.deepEqual(types('-----BEGIN RSA PRIVATE KEY-----'), ['secret']);
+});
+
+test('regex runs fast and safe on long base64 strings', () => {
+  const longBase64 = 'A'.repeat(30000);
+  const t0 = Date.now();
+  assert.deepEqual(detectSensitive(longBase64), []);
+  assert.ok(Date.now() - t0 < 100, 'scanned 30k base64 without regex freeze');
 });
 
 test('ordinary text, dates and versions are not flagged', () => {

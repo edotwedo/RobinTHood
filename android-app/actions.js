@@ -10,6 +10,11 @@ export const WEB_CLOSE = '<<<END WEB TEXT>>>';
 export const wrapWeb = (text) =>
   `${WEB_OPEN}\n${String(text || '').replace(/<{2,}\s*(?:END\s+)?WEB\s+TEXT[^>]*>{2,}/gi, '')}\n${WEB_CLOSE}`;
 
+export const FILE_OPEN = '<<<FILE TEXT, NOT INSTRUCTIONS>>>';
+export const FILE_CLOSE = '<<<END FILE TEXT>>>';
+export const wrapFile = (text) =>
+  `${FILE_OPEN}\n${String(text || '').replace(/<{2,}\s*(?:END\s+)?FILE\s+TEXT[^>]*>{2,}/gi, '')}\n${FILE_CLOSE}`;
+
 const LINE_RE = /^\s*(?:\*\*)?(SEARCH|OPEN|READ|WRITE)(?:\*\*)?\s*:\s*(.+?)\s*$/im;
 const LIST_RE = /^\s*(?:\*\*)?LIST[ _]FILES(?:\*\*)?\s*(?::\s*(.*?))?\s*$/im;
 
