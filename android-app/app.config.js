@@ -27,15 +27,30 @@ module.exports = ({ config }) => {
   // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
   // blocks in release builds unless cleartext is allowed. Every other address the app
   // uses is https.
+  // Real AdMob IDs, injected at build time (CI secrets) so no test IDs reach a release.
+  // The app IDs live on the plugin; the banner unit IDs reach the app through extra.
+  const admob = {
+    androidApp: process.env.ROBIN_ADMOB_ANDROID_APP || '',
+    iosApp: process.env.ROBIN_ADMOB_IOS_APP || '',
+    androidBanner: process.env.ROBIN_ADMOB_ANDROID_BANNER || '',
+    iosBanner: process.env.ROBIN_ADMOB_IOS_BANNER || '',
+  };
+  const plugins = (config.plugins || []).map((entry) => {
+    const [name, opts = {}] = Array.isArray(entry) ? entry : [entry];
+    if (name !== 'react-native-google-mobile-ads') return entry;
+    return [name, { ...opts, androidAppId: admob.androidApp || opts.androidAppId, iosAppId: admob.iosApp || opts.iosAppId }];
+  });
+  const ads = { adMobBannerAndroid: admob.androidBanner, adMobBannerIos: admob.iosBanner };
+
   const baseConfig = withAdMobCompatibility({
     ...config,
-    plugins: [...(config.plugins || []), ['expo-build-properties', { android: { usesCleartextTraffic: true } }]],
+    plugins: [...plugins, ['expo-build-properties', { android: { usesCleartextTraffic: true } }]],
   });
 
   if (!personal) {
     return {
       ...baseConfig,
-      extra: { ...baseConfig.extra, allFiles: false, robinSecret },
+      extra: { ...baseConfig.extra, allFiles: false, robinSecret, ...ads },
     };
   }
 
@@ -49,6 +64,6 @@ module.exports = ({ config }) => {
       // Storage permissions stay for the file library; mic/overlay/background audio stay blocked.
       blockedPermissions: (baseConfig.android?.blockedPermissions || []).filter((p) => !/EXTERNAL_STORAGE/.test(p)),
     },
-    extra: { ...baseConfig.extra, allFiles: true, robinSecret },
+    extra: { ...baseConfig.extra, allFiles: true, robinSecret, ...ads },
   };
 };

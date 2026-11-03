@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Constants from 'expo-constants';
 import mobileAds, { AdsConsent, BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
-// Public test IDs for development and verification before live approval
-const AD_UNIT_ID = __DEV__ ? TestIds.ADAPTIVE_BANNER : 'ca-app-pub-3940256099942544/6300978111';
+// Real unit IDs come from app.config.js (ROBIN_ADMOB_* environment at build time). Until
+// they are set, a dev build or a release falls back to Google's test banner, so a request
+// always fills and no sample ID is mistaken for a live one.
+const configuredUnit = (Constants.expoConfig?.extra || {})[Platform.OS === 'ios' ? 'adMobBannerIos' : 'adMobBannerAndroid'];
+const AD_UNIT_ID = __DEV__ || !configuredUnit ? TestIds.ADAPTIVE_BANNER : configuredUnit;
 
 // House cards shown when AdMob has no fill or is offline. Only the developer's own
 // projects, labelled as such: no partner, sponsor or audience claims without a deal behind them.
