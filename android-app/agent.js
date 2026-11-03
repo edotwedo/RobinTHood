@@ -10,7 +10,7 @@
 import { buildMessages, canSee, engineOrder, labelFor, runEngine } from './engines';
 import { hasImage, mapText } from './photos';
 import { pageRead, searchWeb } from './web';
-import { existsAll, fileExists, listAll, listFiles, readAll, readFile, writeAll, writeFile } from './files';
+import { appendAll, appendFile, existsAll, fileExists, listAll, listFiles, readAll, readFile, searchAllFiles, searchLocalFiles, writeAll, writeFile } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, maskSensitive, mayCollect } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
@@ -24,19 +24,20 @@ const WEB_TOOLS =
   'OPEN: <url>  -- read a web page. You get its text.\n';
 
 const FILE_TOOLS =
+  'SEARCH FILES: <query>  -- search across Markdown notes in the user\'s folder for matching lines. You get snippets, line numbers and file names.\n' +
   'LIST FILES  -- list the files in the user\'s RobinTHood folder on their phone.\n' +
   'READ: <file name>  -- read one of those files.\n' +
-  'WRITE: <file name>  -- create or overwrite a file there. Put the complete file contents on the lines after ' +
-  'the WRITE line; everything after it is saved as the file. Use Markdown (.md) unless the user asks for another type.\n';
+  'WRITE: <file name>  -- create or overwrite a file there. Put the complete file contents on the lines after the WRITE line.\n' +
+  'APPEND: <file name>  -- add text to the end of an existing file (or create it if missing). Put the text to add on the lines after the APPEND line.\n';
 
 const ALL_FILE_TOOLS =
   'You have full access to the files on the user\'s phone (internal storage). Paths are relative to it, ' +
   'like Documents/notes.md, Download/report.pdf.txt or Music.\n' +
+  'SEARCH FILES: <query>  -- search across Markdown notes for matching lines.\n' +
   'LIST FILES: <folder>  -- list a folder (leave the folder out for the top level). Folders end with /.\n' +
   'READ: <path>  -- read a text file.\n' +
-  'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line; ' +
-  'everything after it is saved. A bare file name goes in Documents/RobinTHood/. Use Markdown (.md) unless asked otherwise. ' +
-  'Folders are created as needed. Only overwrite an existing file when the user asked you to change it.\n';
+  'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line.\n' +
+  'APPEND: <path>  -- add text to the end of a text file (or create it if missing). Put the text on the lines after APPEND.\n';
 
 export function toolPrompt({ web, allFiles }) {
   return (
@@ -111,6 +112,13 @@ async function runAction(action, ctx) {
       if (!text) return { text: `Could not read ${action.arg}: ${READ_PROBLEMS[reason] || READ_PROBLEMS.unreadable}` };
       return { text: `Text of ${action.arg}:\n\n${wrapWeb(text)}`, sources: [{ title: host(action.arg), url: action.arg, opened: true }] };
     }
+    case 'SEARCH_FILES': {
+      const dir = await ctx.getFolder();
+      const hits = ctx.allFiles ? await searchAllFiles(action.arg) : await searchLocalFiles(dir, action.arg);
+      if (!hits.length) return { text: `No matches found for "${action.arg}" in your notes.` };
+      const formatted = hits.map((h, i) => `[${i + 1}] ${h.file} (line ${h.line}):\n${h.snippet}`).join('\n\n');
+      return { text: `Matches for "${action.arg}" in your notes:\n\n${wrapFile(formatted)}` };
+    }
     case 'LIST': {
       const dir = await ctx.getFolder();
       if (ctx.allFiles) {
@@ -130,6 +138,11 @@ async function runAction(action, ctx) {
       const dir = await ctx.getFolder();
       const saved = ctx.allFiles ? await writeAll(action.arg, action.body) : await writeFile(dir, action.arg, action.body);
       return { text: `${saved.replaced ? 'Overwrote' : 'Created'} ${saved.name} (${saved.chars} characters) in the user's RobinTHood folder.`, file: saved.name };
+    }
+    case 'APPEND': {
+      const dir = await ctx.getFolder();
+      const saved = ctx.allFiles ? await appendAll(action.arg, action.body) : await appendFile(dir, action.arg, action.body);
+      return { text: `${saved.appended ? 'Appended to' : 'Created'} ${saved.name} in the user's RobinTHood folder.`, file: saved.name };
     }
     default:
       return { text: 'Unknown action.' };
@@ -231,12 +244,12 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     onEvent({ type: 'step', label, steps: [...steps] });
     let result;
     try {
-      if (action.kind === 'WRITE' && (state.partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
+      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && (state.partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
         throw new Error(`${action.arg} is longer than Robin can read at once, so it saw only the start. Writing it would `
           + 'delete the rest. Do not overwrite it; save the change to a new file and tell the user');
       }
       // No confirm handler means no tap is possible: refuse rather than run unchecked.
-      if (action.kind === 'WRITE' && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, ctx);
+      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, ctx);
       const allowed = !needsConfirm(action, taint) || (ctx.confirm ? await ctx.confirm(action) : false);
       if (signal?.aborted) throw new Error('Stopped');
       if (!allowed) {
@@ -249,7 +262,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         }
         if (result.sources) sources.push(...result.sources);
         if (result.file) files.push(result.file);
-        if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ' || action.kind === 'LIST') {
+        if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ' || action.kind === 'LIST' || action.kind === 'SEARCH_FILES') {
           taint.web = true;
           if (action.kind === 'SEARCH') (result.sources || []).forEach((s) => taint.safeUrls.add(s.url));
         }

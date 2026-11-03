@@ -426,7 +426,7 @@ function Chat() {
             const lang = settings.lang;
             const detail = action.kind === 'OPEN' ? action.arg
               : action.kind === 'LIST' ? (action.arg || t('confirmYourFiles', lang))
-              : action.kind === 'WRITE' ? writeDetail(action, lang)
+              : (action.kind === 'WRITE' || action.kind === 'APPEND') ? writeDetail(action, lang)
               : action.arg;
             setStatus(t('confirmWaiting', lang));
             Alert.alert(

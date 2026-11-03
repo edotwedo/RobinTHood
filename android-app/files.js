@@ -121,6 +121,41 @@ export async function writeFile(dirUri, name, content) {
   return { name: isPlainDir(dirUri) ? fileName : nameOf(uri) || fileName, chars: content.length, replaced: Boolean(existing) };
 }
 
+export async function appendFile(dirUri, name, content) {
+  const fileName = cleanName(name);
+  const exists = await fileExists(dirUri, fileName);
+  let finalContent = content;
+  if (exists) {
+    const existing = await readFile(dirUri, fileName);
+    const sep = existing.endsWith('\n') ? '' : '\n';
+    finalContent = existing + sep + content;
+  }
+  const saved = await writeFile(dirUri, fileName, finalContent);
+  return { ...saved, appended: exists };
+}
+
+export async function searchLocalFiles(dirUri, query, maxHits = 6) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const allNames = await listFiles(dirUri);
+  const hits = [];
+  for (const name of allNames) {
+    if (!/\.(md|txt|markdown|csv)$/i.test(name)) continue;
+    try {
+      const text = await readFile(dirUri, name);
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.toLowerCase().includes(q)) {
+          hits.push({ file: name, line: i + 1, snippet: line.trim().slice(0, 200) });
+          if (hits.length >= maxHits) return hits;
+        }
+      }
+    } catch {}
+  }
+  return hits;
+}
+
 // ---- Phil's personal build: whole-phone access ("All files access") ----
 // The library is only linked into that build, so it is loaded lazily and only
 // ever used when allFiles is on.
@@ -193,4 +228,43 @@ export async function writeAll(path, content) {
   await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
   await fs().writeFile(full, content, 'utf8');
   return { name: full.slice(rootPath().length + 1), chars: content.length, replaced };
+}
+
+export async function appendAll(path, content) {
+  const full = writePath(path);
+  let finalContent = content;
+  const exists = await fs().exists(full);
+  if (exists) {
+    const existing = await fs().readFile(full, 'utf8');
+    const sep = existing.endsWith('\n') ? '' : '\n';
+    finalContent = existing + sep + content;
+  } else {
+    await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
+  }
+  await fs().writeFile(full, finalContent, 'utf8');
+  return { name: full.slice(rootPath().length + 1), chars: finalContent.length, appended: exists };
+}
+
+export async function searchAllFiles(query, folder = 'Documents/RobinTHood', maxHits = 6) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return [];
+  const allNames = await listAll(folder);
+  const hits = [];
+  for (const item of allNames) {
+    if (item.endsWith('/')) continue;
+    if (!/\.(md|txt|markdown|csv)$/i.test(item)) continue;
+    try {
+      const filePath = folder ? `${folder.replace(/\/+$/, '')}/${item}` : item;
+      const text = await readAll(filePath);
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.toLowerCase().includes(q)) {
+          hits.push({ file: item, line: i + 1, snippet: line.trim().slice(0, 200) });
+          if (hits.length >= maxHits) return hits;
+        }
+      }
+    } catch {}
+  }
+  return hits;
 }

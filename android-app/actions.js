@@ -15,8 +15,9 @@ export const FILE_CLOSE = '<<<END FILE TEXT>>>';
 export const wrapFile = (text) =>
   `${FILE_OPEN}\n${String(text || '').replace(/<{2,}\s*(?:END\s+)?FILE\s+TEXT[^>]*>{2,}/gi, '')}\n${FILE_CLOSE}`;
 
-const LINE_RE = /^\s*(?:\*\*)?(SEARCH|OPEN|READ|WRITE)(?:\*\*)?\s*:\s*(.+?)\s*$/im;
+const LINE_RE = /^\s*(?:\*\*)?(SEARCH|OPEN|READ|WRITE|APPEND)(?:\*\*)?\s*:\s*(.+?)\s*$/im;
 const LIST_RE = /^\s*(?:\*\*)?LIST[ _]FILES(?:\*\*)?\s*(?::\s*(.*?))?\s*$/im;
+const SEARCH_FILES_RE = /^\s*(?:\*\*)?SEARCH[ _]FILES(?:\*\*)?\s*:\s*(.+?)\s*$/im;
 
 const MAX_PREAMBLE = 150;
 
@@ -25,13 +26,16 @@ const stripQuotes = (s) => s.replace(/^\*+\s*/, '').replace(/^[`"'<]+|[`"'>]+$/g
 // Find an action the model asked for. It only counts when the action opens the reply
 // (a little preamble is tolerated); an answer that merely mentions "search:" stays an answer.
 export function parseAction(text) {
+  const searchFiles = text.match(SEARCH_FILES_RE);
   const list = text.match(LIST_RE);
   const line = text.match(LINE_RE);
-  const m = list && (!line || list.index < line.index) ? list : line;
+  const candidates = [searchFiles, list, line].filter(Boolean).sort((a, b) => a.index - b.index);
+  const m = candidates[0];
   if (!m) return null;
   const before = text.slice(0, m.index).trim();
   // More than a short lead-in means this is an answer that happens to quote the syntax.
   if (before.length > MAX_PREAMBLE) return null;
+  if (m === searchFiles) return { kind: 'SEARCH_FILES', arg: stripQuotes(m[1] || '') };
   if (m === list) return { kind: 'LIST', arg: stripQuotes(m[1] || '') };
   const kind = m[1].toUpperCase();
   let arg = stripQuotes(m[2]);
@@ -42,7 +46,7 @@ export function parseAction(text) {
     arg = url[0].replace(/[)\].,;>]+$/, '');
   }
   if (!arg) return null;
-  if (kind === 'WRITE') {
+  if (kind === 'WRITE' || kind === 'APPEND') {
     let body = text.slice(m.index + m[0].length).replace(/^\r?\n/, '');
     const fenced = body.match(/^\s*```[\w-]*\n([\s\S]*?)\n```\s*$/);
     // Only unwrap one fence around the whole file. A note that starts with one code block
@@ -61,7 +65,7 @@ export function looksLikeAction(partial) {
   const cur = lines[lines.length - 1].trim().replace(/^\*+/, '').toUpperCase();
   if (!cur || partial.length >= MAX_PREAMBLE + 50) return !cur && partial.trim() === '';
   const starts = (w) => (cur.length <= w.length ? w.startsWith(cur) : cur.startsWith(w));
-  return ['SEARCH:', 'OPEN:', 'READ:', 'WRITE:', 'LIST FILES'].some(starts);
+  return ['SEARCH:', 'OPEN:', 'READ:', 'WRITE:', 'APPEND:', 'LIST FILES', 'SEARCH FILES'].some(starts);
 }
 
 export const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
@@ -70,7 +74,9 @@ export function stepLabel(a) {
   if (a.kind === 'SEARCH') return `Searching: ${a.arg}`;
   if (a.kind === 'OPEN') return `Reading: ${host(a.arg)}`;
   if (a.kind === 'LIST') return a.arg ? `Looking in: ${a.arg}` : 'Looking at your files';
+  if (a.kind === 'SEARCH_FILES') return `Searching notes: ${a.arg}`;
   if (a.kind === 'READ') return `Opening file: ${a.arg}`;
+  if (a.kind === 'APPEND') return `Updating file: ${a.arg}`;
   return `Saving file: ${a.arg}`;
 }
 
@@ -82,7 +88,7 @@ export const urlsIn = (text) => (text.match(URL_RE) || []).map((u) => u.replace(
 
 export function needsConfirm(action, taint) {
   if (!taint.web) return false;
-  if (action.kind === 'SEARCH') return false;
+  if (action.kind === 'SEARCH' || action.kind === 'SEARCH_FILES') return false;
   if (action.kind === 'OPEN') return !taint.safeUrls.has(action.arg);
   return true;
 }

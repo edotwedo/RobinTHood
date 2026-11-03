@@ -107,3 +107,21 @@ test('fileKey matches identically with cleanName across dirty characters and pun
   assert.equal(fileKey('***'), 'note.md');
   assert.equal(fileKey('***.md'), 'note.md');
 });
+test('parseAction handles APPEND and SEARCH FILES correctly', () => {
+  const ap = parseAction('APPEND: daily.md\n- did 20 pushups');
+  assert.equal(ap.kind, 'APPEND');
+  assert.equal(ap.arg, 'daily.md');
+  assert.equal(ap.body, '- did 20 pushups\n');
+
+  const sf = parseAction('SEARCH FILES: router password');
+  assert.equal(sf.kind, 'SEARCH_FILES');
+  assert.equal(sf.arg, 'router password');
+
+  const sf2 = parseAction('SEARCH_FILES: grocery');
+  assert.equal(sf2.kind, 'SEARCH_FILES');
+  assert.equal(sf2.arg, 'grocery');
+
+  const apTainted = { web: true, safeUrls: new Set() };
+  assert.equal(needsConfirm(ap, apTainted), true);
+  assert.equal(needsConfirm(sf, apTainted), false);
+});
