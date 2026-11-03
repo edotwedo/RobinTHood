@@ -207,11 +207,15 @@ jobs:
 
       # Automatically deploy the signed Play bundle directly to Google Play Closed Testing track (track001)
       - name: Deploy to Google Play Closed Testing (track001)
-        if: (github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild') && secrets.PLAY_SERVICE_ACCOUNT_JSON != ''
+        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
         working-directory: .
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "No PLAY_SERVICE_ACCOUNT_JSON secret configured; skipping Play deployment."
+            exit 0
+          fi
           if [ ! -f "android-app/dist/RobinTHood-play.aab" ]; then
             echo "Signed Play bundle not found; skipping Play deployment."
             exit 0
