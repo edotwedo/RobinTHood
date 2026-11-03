@@ -100,7 +100,59 @@ export async function createSqliteAdapter(dbPath = 'robin_notes_fts.db') {
     }
   } catch {}
 
-  return null;
+  // Fallback: in-memory adapter for environments like Node 20 without native SQLite
+  const memTables = new Map();
+  const ftsRows = [];
+  return {
+    type: 'mock',
+    async exec() {},
+    async run(sql, params = []) {
+      if (/DELETE FROM notes_fts WHERE file =/i.test(sql)) {
+        const file = params[0];
+        for (let i = ftsRows.length - 1; i >= 0; i--) {
+          if (ftsRows[i].file === file) ftsRows.splice(i, 1);
+        }
+      } else if (/INSERT INTO notes_fts/i.test(sql)) {
+        const [file, line, heading, body] = params;
+        ftsRows.push({ file, line, heading, body });
+      } else if (/INSERT OR REPLACE INTO notes_meta/i.test(sql)) {
+        memTables.set(params[0], { len: params[1], updated_at: params[2] });
+      } else if (/DELETE FROM notes_meta/i.test(sql)) {
+        memTables.delete(params[0]);
+      }
+    },
+    async all(sql, params = []) {
+      if (/SELECT file, len FROM notes_meta/i.test(sql)) {
+        return Array.from(memTables.entries()).map(([file, d]) => ({ file, len: d.len }));
+      }
+      if (/SELECT file FROM notes_meta/i.test(sql)) {
+        return Array.from(memTables.keys()).map((file) => ({ file }));
+      }
+      if (/FROM notes_fts WHERE notes_fts MATCH/i.test(sql)) {
+        const matchArg = String(params[0] || '').toLowerCase().replace(/["*]/g, '').trim();
+        const tokens = matchArg.split(/\s+/).filter(Boolean);
+        const limit = params[1] || 6;
+        const matched = [];
+        for (const row of ftsRows) {
+          const text = `${row.heading} ${row.body}`.toLowerCase();
+          if (tokens.every((tok) => text.includes(tok))) {
+            matched.push({
+              file: row.file,
+              line: row.line,
+              heading: row.heading,
+              snippet: row.body.slice(0, 150),
+              body: row.body,
+              rank: -1,
+            });
+            if (matched.length >= limit) break;
+          }
+        }
+        return matched;
+      }
+      return [];
+    },
+    async close() {},
+  };
 }
 
 let _dbInstance = null;
