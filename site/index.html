@@ -3,175 +3,329 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RobinTHood 0.3.7 — a Windows workspace for songs, stories and ideas</title>
-<meta name="description" content="RobinTHood 0.3.7 keeps a document and its conversation together on your PC. Writing help is optional and off until you turn it on. Windows 10 and 11, one EXE, no installer.">
+<title>RobinTHood — Free AI Chat with Live Web Search & Photo Vision</title>
+<meta name="description" content="RobinTHood is a free AI assistant for Android with live web search, photo reading, and document analysis. No account to make, no subscription to buy.">
 <meta name="color-scheme" content="light">
 <style>
-  :root{
-    --paper:#f3efe3;--paper-2:#eae4d3;--ink:#11241a;--ink-soft:#3d4f43;--muted:#6a7a6e;
-    --line:#cdc5ad;--green:#1f6f45;--green-deep:#123a26;--gold:#c08a24;--gold-ink:#4a3608;
-    --radius:10px;--measure:66ch;--step-0:1rem;--step-1:1.25rem;--step-3:2.35rem;
-    --step-4:clamp(2.6rem,6vw,4.4rem);
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
-    --mono:ui-monospace,"Cascadia Mono","SFMono-Regular",Consolas,monospace;
-    --maxw:1120px;
+  :root {
+    --paper: #f4f0e4;
+    --paper-card: #fcfbf7;
+    --paper-dark: #eae4d0;
+    --ink: #112217;
+    --ink-soft: #384d3f;
+    --muted: #627568;
+    --line: #cec6b0;
+    --green: #1a6b40;
+    --green-deep: #0f3d24;
+    --green-glow: #2fb46e;
+    --gold: #c28822;
+    --gold-bg: #fff8e8;
+    --radius: 12px;
+    --measure: 68ch;
+    --step-0: 1rem;
+    --step-1: 1.25rem;
+    --step-2: 1.65rem;
+    --step-3: 2.25rem;
+    --step-4: clamp(2.4rem, 5.5vw, 4.2rem);
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+    --maxw: 1120px;
   }
-  *{box-sizing:border-box}
-  html{-webkit-text-size-adjust:100%}
-  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:var(--step-0);line-height:1.6}
-  a{color:var(--green);text-underline-offset:3px}
-  h1,h2,h3{font-family:var(--serif);line-height:1.08;margin:0}
-  h1{font-size:var(--step-4)}
-  h2{font-size:var(--step-3)}
-  h3{font-size:var(--step-1);font-weight:600}
-  p{margin:0}
-  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
-  .mono{font-family:var(--mono)}
-  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:inline-flex;gap:.5ch;align-items:center}
-  .eyebrow::before{content:"";width:22px;height:2px;background:var(--gold)}
-  a:focus-visible,summary:focus-visible{outline:2px dashed var(--green);outline-offset:3px;border-radius:4px}
-  .btn{display:inline-flex;align-items:center;min-height:48px;padding:0 20px;border-radius:999px;font-weight:600;text-decoration:none;border:1px solid transparent}
-  .btn-primary{background:var(--green);color:#fff}
-  .btn-primary:hover{background:var(--green-deep)}
-  .btn-ghost{background:transparent;color:var(--ink);border-color:var(--line)}
-  header.site{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  .bar{display:flex;align-items:center;gap:20px;min-height:66px}
-  .mark{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-weight:600;font-size:1.15rem;text-decoration:none;color:var(--ink)}
-  nav.links{display:flex;gap:22px;margin-left:auto}
-  nav.links a{color:var(--ink-soft);text-decoration:none}
-  nav.links a:hover{color:var(--ink)}
-  @media(max-width:760px){nav.links{display:none}}
-  .hero{padding:clamp(40px,7vw,84px) 0 0}
-  .lede{font-size:var(--step-1);color:var(--ink-soft);max-width:46ch;margin-top:18px}
-  .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
-  .fineprint{margin-top:14px;font-size:.84rem;color:var(--muted)}
-  section{padding:clamp(48px,8vw,96px) 0}
-  .rule{border-top:1px solid var(--line)}
-  .kicker{margin-bottom:14px}
-  .lead{max-width:var(--measure);color:var(--ink-soft);margin-top:14px}
-  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:32px}
-  @media(max-width:820px){.three{grid-template-columns:1fr}}
-  .step{border-top:2px solid var(--ink);padding-top:16px}
-  .step .n{font-family:var(--mono);font-size:.75rem;color:var(--gold);letter-spacing:.1em}
-  .step h3{margin:8px 0}
-  .step p{color:var(--ink-soft)}
-  details{border-bottom:1px solid var(--line)}
-  summary{cursor:pointer;padding:16px 0;font-weight:600;list-style:none}
-  summary::-webkit-details-marker{display:none}
-  details p{padding:0 0 18px;color:var(--ink-soft);max-width:var(--measure)}
-  .cta-band{background:var(--green-deep);color:#eaf3ea}
-  .cta-band h2{color:#fff}
-  .cta-band p{color:#b9d3c2;max-width:52ch;margin-top:12px}
-  footer.site{border-top:1px solid var(--line);padding:34px 0;color:var(--muted);font-size:.86rem}
-  footer a{color:var(--ink-soft)}
-  code{font-family:var(--mono);font-size:.84em}
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.6;
+  }
+  a { color: var(--green); text-underline-offset: 3px; }
+  h1, h2, h3 { font-family: var(--serif); line-height: 1.1; margin: 0; }
+  h1 { font-size: var(--step-4); letter-spacing: -0.02em; }
+  h2 { font-size: var(--step-3); letter-spacing: -0.01em; }
+  h3 { font-size: var(--step-1); font-weight: 600; }
+  p { margin: 0; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  .mono { font-family: var(--mono); }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--green-deep);
+    display: inline-flex;
+    gap: 0.6ch;
+    align-items: center;
+    background: var(--paper-dark);
+    padding: 4px 12px;
+    border-radius: 999px;
+  }
+  .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--gold); }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    padding: 0 24px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 1.05rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform 0.1s ease, background 0.15s ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--green); color: #fff; box-shadow: 0 4px 14px rgba(26, 107, 64, 0.25); }
+  .btn-primary:hover { background: var(--green-deep); color: #fff; }
+  .btn-secondary { background: var(--paper-card); color: var(--ink); border-color: var(--line); }
+  .btn-secondary:hover { background: #fff; border-color: var(--green); }
+  .btn-ghost { background: transparent; color: var(--ink-soft); border-color: var(--line); font-size: 0.92rem; }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--ink); }
+  
+  header.site {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--paper) 90%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; min-height: 70px; }
+  .mark {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 1.35rem;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .mark span { color: var(--gold); }
+  nav.links { display: flex; gap: 24px; }
+  nav.links a { color: var(--ink-soft); text-decoration: none; font-weight: 500; }
+  nav.links a:hover { color: var(--green); }
+  @media(max-width: 760px) { nav.links { display: none; } }
+
+  .hero { padding: clamp(40px, 7vw, 84px) 0 40px; }
+  .hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; }
+  @media(max-width: 900px) { .hero-grid { grid-template-columns: 1fr; } }
+  .lede { font-size: var(--step-1); color: var(--ink-soft); max-width: 48ch; margin-top: 20px; line-height: 1.5; }
+  .actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 32px; }
+  .fineprint { margin-top: 18px; font-size: 0.84rem; color: var(--muted); }
+  
+  .phone-card {
+    background: var(--paper-card);
+    border: 2px solid var(--line);
+    border-radius: 28px;
+    padding: 24px;
+    box-shadow: 0 16px 36px rgba(17, 34, 23, 0.08);
+  }
+  .chat-bubble {
+    padding: 12px 18px;
+    border-radius: 16px;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+    max-width: 88%;
+  }
+  .chat-user { background: var(--green); color: #fff; margin-left: auto; border-bottom-right-radius: 4px; }
+  .chat-bot { background: var(--paper-dark); color: var(--ink); border-bottom-left-radius: 4px; }
+  .chat-source { font-size: 0.78rem; color: var(--green-deep); margin-top: 6px; font-weight: 600; }
+
+  section { padding: clamp(52px, 8vw, 96px) 0; }
+  .rule { border-top: 1px solid var(--line); }
+  .kicker { margin-bottom: 14px; }
+  .grid-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 36px; }
+  @media(max-width: 820px) { .grid-three { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 28px;
+  }
+  .card .icon-num { font-family: var(--mono); color: var(--gold); font-size: 0.85rem; font-weight: bold; letter-spacing: 0.1em; }
+  .card h3 { margin: 12px 0 8px; color: var(--ink); }
+  .card p { color: var(--ink-soft); font-size: 0.95rem; }
+
+  details { border-bottom: 1px solid var(--line); padding: 6px 0; }
+  summary { cursor: pointer; padding: 16px 0; font-weight: 600; font-size: 1.15rem; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font-size: 1.4rem; color: var(--green); }
+  details[open] summary::after { content: "−"; }
+  details p { padding: 0 0 18px; color: var(--ink-soft); max-width: var(--measure); }
+
+  .cta-band {
+    background: var(--green-deep);
+    color: #eaf3ea;
+    border-radius: 24px;
+    padding: clamp(36px, 6vw, 64px) clamp(24px, 5vw, 48px);
+    margin: 40px 0;
+    text-align: center;
+  }
+  .cta-band h2 { color: #fff; }
+  .cta-band p { color: #b9d3c2; max-width: 52ch; margin: 14px auto 28px; }
+  .cta-band .btn-primary { background: #fff; color: var(--green-deep); }
+  .cta-band .btn-primary:hover { background: var(--paper); }
+
+  footer.site { border-top: 1px solid var(--line); padding: 40px 0; color: var(--muted); font-size: 0.88rem; }
+  .foot-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+  footer a { color: var(--ink-soft); text-decoration: none; }
+  footer a:hover { color: var(--green); text-decoration: underline; }
 </style>
 </head>
 <body>
+
 <header class="site">
   <div class="wrap bar">
-    <a class="mark" href="#top">RobinTHood</a>
+    <a class="mark" href="#top">Robin<span>T</span>Hood</a>
     <nav class="links" aria-label="Sections">
-      <a href="#how">How it works</a>
-      <a href="#work">Your work</a>
-      <a href="#updates">Updates</a>
-      <a href="#questions">Questions</a>
+      <a href="#features">Features</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </div>
 </header>
+
 <main id="top">
   <div class="wrap hero">
-    <span class="eyebrow">Windows · version 0.3.7 · free</span>
-    <h1>Songs, stories and ideas.<br>One workspace.</h1>
-    <p class="lede">RobinTHood keeps a document and its conversation together on your PC. Reopen a project later and revise the same work. Writing help is off until you turn it on.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="https://github.com/edotwedo/RobinTHood/releases/download/v0.3.7/RobinTHood.exe">Download RobinTHood 0.3.7</a>
-      <a class="btn btn-ghost" href="https://phil-projects.phone-liaison.workers.dev/#robinthood">All of Phil's projects</a>
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Android Beta · Free Forever · No Paywall</span>
+        <h1>Free AI Chat with Live Web Search.</h1>
+        <p class="lede">
+          RobinTHood searches the internet, reads articles and docs, parses photos, and gives you checkable answers with real source citations. No accounts, no subscriptions, and zero paywalls.
+        </p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://play.google.com/apps/testing/com.edotwedo.robinthood" target="_blank" rel="noopener">
+            Join the Google Play Beta
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/edotwedo/RobinTHood/releases/download/android-latest/RobinTHood.apk">
+            Download Direct APK (v0.8.2)
+          </a>
+        </div>
+        <p class="fineprint">
+          Android 10+ · 31 MB · Uploaded to Google Play Closed Testing · Verified Clean Suite
+        </p>
+      </div>
+
+      <div class="phone-card">
+        <div class="chat-bubble chat-user">What are the best farmers markets open in Seattle this Sunday?</div>
+        <div class="chat-bubble chat-bot">
+          <strong>Searching web & verifying schedules...</strong><br>
+          • <strong>Ballard Farmers Market</strong>: 9 AM – 2 PM (Open year-round on Ballard Ave NW).<br>
+          • <strong>Capitol Hill Farmers Market</strong>: 11 AM – 3 PM (E Denny Way & Broadway).
+          <div class="chat-source">✓ Verified from seattlefarmersmarkets.org & ballardfarmersmarket.org</div>
+        </div>
+        <div class="chat-bubble chat-user">Read this photo of my lease and check the pet policy clause.</div>
+        <div class="chat-bubble chat-bot">
+          Parsed Section 14: Pets permitted under 35 lbs with a $250 refundable deposit.
+        </div>
+      </div>
     </div>
-    <p class="fineprint">55.3&nbsp;MB · Windows 10 and 11 · no installer · the file includes its runtime</p>
-    <p class="fineprint">SHA-256 <code>3044664ae666ef22df23ecae02f45ad57caa055fba4c2f366709a201459f504e</code></p>
   </div>
 
-  <section id="how" class="rule">
+  <section id="features" class="rule">
     <div class="wrap">
-      <span class="eyebrow kicker">How it works</span>
-      <h2>Start a project. Keep going later.</h2>
-      <div class="three">
-        <article class="step">
-          <div class="n">01</div>
-          <h3>Open the file</h3>
-          <p>Download RobinTHood.exe and open it. Setup can put a shortcut on the desktop, outside Downloads, so you have one place to open Robin.</p>
+      <span class="eyebrow kicker">Built for Real Life</span>
+      <h2>Everything locked behind $20/month AI, free.</h2>
+      <div class="grid-three">
+        <article class="card">
+          <div class="icon-num">01 / SEARCH</div>
+          <h3>Live Web Search & Sources</h3>
+          <p>Robin searches DuckDuckGo and Wikipedia, fetches live pages, and extracts the exact text you need. Every answer includes checkable links so you always know where facts come from.</p>
         </article>
-        <article class="step">
-          <div class="n">02</div>
-          <h3>Write in the document</h3>
-          <p>Name the project and write. Robin saves your edits. Reopen it from the project list and the document is still there.</p>
+        <article class="card">
+          <div class="icon-num">02 / VISION</div>
+          <h3>Photo & Document Vision</h3>
+          <p>Attach a photo, a screenshot, or a text document. Robin inspects receipts, summarizes long notes, debugs code snippets, and translates foreign text on demand.</p>
         </article>
-        <article class="step">
-          <div class="n">03</div>
-          <h3>Ask only if you want</h3>
-          <p>Turn on writing assistance in Setup, then choose Ask Robin. Save Robin's draft adopts an answer. Update my document revises the saved document after a complete answer. Earlier copies stay under Project options, Previous versions.</p>
+        <article class="card">
+          <div class="icon-num">03 / PRIVACY</div>
+          <h3>Zero Account Friction</h3>
+          <p>No passwords, no email verification, no monthly billing cycles. Your chats stay on your phone, and built-in privacy filters automatically mask emails and card numbers before queries leave your device.</p>
         </article>
       </div>
     </div>
   </section>
 
-  <section id="work" class="rule">
+  <section id="privacy" class="rule">
     <div class="wrap">
-      <span class="eyebrow kicker">Your work</span>
-      <h2>It stays on this PC.</h2>
-      <p class="lead">Projects, documents, conversations and previous versions are stored under <span class="mono">%LOCALAPPDATA%\RobinTHood\Workspace</span>. There is no cloud sync. Back up that folder if you want another copy. Export a copy from Project options when you want a separate text file. Open project folder shows where that project's files live.</p>
-      <p class="lead">Writing assistance needs the internet and is off until you enable it. When you ask Robin, your request, the current document and the recent conversation are sent to an AI service. You can write, save and reopen projects with assistance switched off.</p>
-    </div>
-  </section>
-
-  <section id="updates" class="rule">
-    <div class="wrap">
-      <span class="eyebrow kicker">Updates</span>
-      <h2>0.3.7 is the current download.</h2>
-      <p class="lead">On opening, Robin checks GitHub for a newer release. That check does not send your project text. Nothing installs until you choose the update button and confirm. Robin checks the download's size and SHA-256 before it installs, then asks you to restart.</p>
-      <p class="lead">0.3.7 downloads a newer release from GitHub on its own and replaces this program file. The download has to match its size and SHA-256. Your projects and any other files stay where they are. The sidebar still says when this copy is already up to date.</p>
-    </div>
-  </section>
-
-  <section id="questions" class="rule">
-    <div class="wrap">
-      <span class="eyebrow kicker">Questions</span>
-      <h2>Straight answers</h2>
-      <details>
-        <summary>What does this version do?</summary>
-        <p>It helps with text: lyrics, drafts, notes and planning. It does not generate audio recordings or images.</p>
-      </details>
-      <details>
-        <summary>Do I need an account or a subscription?</summary>
-        <p>No. Download the EXE and open it. There is no Pro purchase in this version.</p>
-      </details>
-      <details>
-        <summary>Which Windows versions?</summary>
-        <p>Windows 10 and 11, 64-bit. You do not install a separate .NET runtime first.</p>
-      </details>
-      <details>
-        <summary>Where else can I get this exact file?</summary>
-        <p>The projects page and the Google Drive link Phil already shared serve this same 0.3.7 file. The GitHub release is the one the in-app updater uses.</p>
-      </details>
-    </div>
-  </section>
-
-  <section id="get" class="cta-band">
-    <div class="wrap">
-      <h2>Download 0.3.7 and write.</h2>
-      <p>One Windows EXE. Your projects stay on the computer you open it on.</p>
-      <div class="actions">
-        <a class="btn btn-primary" href="https://github.com/edotwedo/RobinTHood/releases/download/v0.3.7/RobinTHood.exe">Download RobinTHood 0.3.7</a>
+      <span class="eyebrow kicker">Radical Transparency</span>
+      <h2>Your data is yours. Period.</h2>
+      <div class="grid-three">
+        <article class="card">
+          <div class="icon-num">ON-DEVICE STORAGE</div>
+          <h3>Chats Stay on Phone</h3>
+          <p>We don't run user tracking databases. Conversation histories are saved locally on your phone storage. When you clear a chat, it is gone.</p>
+        </article>
+        <article class="card">
+          <div class="icon-num">PII SHIELD</div>
+          <h3>Automatic Data Masking</h3>
+          <p>Robin scans messages for credit card numbers, Social Security numbers, and passwords, giving you a 1-tap option to mask private details before sending.</p>
+        </article>
+        <article class="card">
+          <div class="icon-num">OPEN MODELS</div>
+          <h3>Transparent AI Models</h3>
+          <p>Robin clearly marks which models retain inference logs and which don't. You can choose OVHcloud, Kilo, or connect your own local Home Ollama server.</p>
+        </article>
       </div>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <div class="cta-band">
+      <h2>Ready to take back your AI?</h2>
+      <p>Join the closed alpha test today, help us stress-test the release, and get permanent free access before public launch.</p>
+      <a class="btn btn-primary" href="https://play.google.com/apps/testing/com.edotwedo.robinthood" target="_blank" rel="noopener">
+        Join the Beta on Google Play
+      </a>
+    </div>
+  </section>
+
+  <section id="faq" class="rule">
+    <div class="wrap">
+      <span class="eyebrow kicker">Frequently Asked Questions</span>
+      <h2>Everything you need to know.</h2>
+      
+      <details>
+        <summary>What does the 'T' stand for?</summary>
+        <p>The "T" stands for <strong>"The"</strong> — as in <em>Robin The Hood</em>, the classic folk legend taking what was locked away behind high castle walls and returning it to the people. It also stands for <strong>Transparent</strong>, <strong>Truth</strong>, and <em>Totally not the stock app</em>.</p>
+      </details>
+
+      <details>
+        <summary>How can this possibly be free?</summary>
+        <p>RobinTHood routes queries through optimized open-source inference providers and edge infrastructure (Cloudflare Workers, OVHcloud, Kilo) that don't carry the massive overhead of Big Tech marketing. Basic non-intrusive banner ads cover server bandwidth.</p>
+      </details>
+
+      <details>
+        <summary>How do I become a Google Play Beta tester?</summary>
+        <p>Tap the <strong>Join the Google Play Beta</strong> button above. Sign in with the Google Account active on your Android phone, tap "Become a tester", and install the build directly from the Play Store.</p>
+      </details>
+
+      <details>
+        <summary>Can I use it on Windows PC too?</summary>
+        <p>Yes! We maintain an open-source Windows creative workspace release. Check our GitHub releases for the standalone Windows desktop EXE.</p>
+      </details>
     </div>
   </section>
 </main>
+
 <footer class="site">
-  <div class="wrap">
-    <span>RobinTHood 0.3.7 · a Windows workspace</span>
+  <div class="wrap foot-flex">
+    <div>
+      <strong>RobinTHood</strong> · A community-driven free AI initiative.
+    </div>
+    <div style="display: flex; gap: 20px;">
+      <a href="https://robinthood-search.phone-liaison.workers.dev/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="mailto:aroundrobin@protonmail.com">Contact Developer</a>
+      <a href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">Source Code</a>
+    </div>
   </div>
 </footer>
+
 </body>
 </html>
