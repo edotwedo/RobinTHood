@@ -128,7 +128,7 @@ export async function createSqliteAdapter(dbPath = 'robin_notes_fts.db') {
       if (/SELECT file FROM notes_meta/i.test(sql)) {
         return Array.from(memTables.keys()).map((file) => ({ file }));
       }
-      if (/FROM notes_fts WHERE notes_fts MATCH/i.test(sql)) {
+      if (/FROM\s+notes_fts\s+WHERE\s+notes_fts\s+MATCH/i.test(sql)) {
         const matchArg = String(params[0] || '').toLowerCase().replace(/["*]/g, '').trim();
         const tokens = matchArg.split(/\s+/).filter(Boolean);
         const limit = params[1] || 6;
