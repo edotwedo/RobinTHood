@@ -62,13 +62,8 @@ export async function pickAttachment(maxChars = 12000) {
   return { kind: 'text', name, text: text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text };
 }
 
-export function cleanName(name) {
-  let n = String(name).trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop();
-  n = n.replace(/[<>:"|?*\u0000-\u001f]/g, '').trim();
-  if (!n) n = 'note';
-  if (!/\.[a-z0-9]{1,6}$/i.test(n)) n += '.md';
-  return n.slice(0, 120);
-}
+import { cleanName } from './actions';
+export { cleanName };
 
 // The display name of a SAF document URI.
 export function nameOf(uri) {

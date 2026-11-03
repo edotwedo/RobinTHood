@@ -106,6 +106,8 @@ async function signedRequestLimited(env, ip, rawBody) {
 // Reads at most MAX_BODY_CHARS bytes, whatever Content-Length claims; null when longer.
 // request.text() would buffer the whole upload in the isolate before any size check.
 async function readCappedBody(request) {
+  const cl = Number(request.headers.get('content-length') || 0);
+  if (cl > MAX_BODY_CHARS) return null;
   if (!request.body) return '';
   const reader = request.body.getReader();
   const chunks = [];

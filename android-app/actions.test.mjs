@@ -99,3 +99,11 @@ test('WRITE unwraps one fence around the file but keeps a note made of two code 
   const two = '```js\na()\n```\ntext\n```py\nb()\n```';
   assert.equal(parseAction(`WRITE: a.md\n${two}`).body, `${two}\n`);
 });
+test('fileKey matches identically with cleanName across dirty characters and punctuation', () => {
+  assert.equal(fileKey('notes.md'), 'notes.md');
+  assert.equal(fileKey('n<>otes.md'), 'notes.md');
+  assert.equal(fileKey('notes:.md'), 'notes.md');
+  assert.equal(fileKey('Notes.md'), 'notes.md');
+  assert.equal(fileKey('***'), 'note.md');
+  assert.equal(fileKey('***.md'), 'note.md');
+});

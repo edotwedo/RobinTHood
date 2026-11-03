@@ -116,10 +116,10 @@ async function runAction(action, ctx) {
       if (ctx.allFiles) {
         const names = await listAll(action.arg);
         const where = action.arg || 'internal storage (top level)';
-        return { text: names.length ? `Contents of ${where}:\n${names.map((n) => `- ${n}`).join('\n')}` : `${where} is empty.` };
+        return { text: names.length ? `Contents of ${where}:\n\n${wrapFile(names.map((n) => `- ${n}`).join('\n'))}` : `${where} is empty.` };
       }
       const names = await listFiles(dir);
-      return { text: names.length ? `Files in the RobinTHood folder:\n${names.map((n) => `- ${n}`).join('\n')}` : 'The RobinTHood folder is empty.' };
+      return { text: names.length ? `Files in the RobinTHood folder:\n\n${wrapFile(names.map((n) => `- ${n}`).join('\n'))}` : 'The RobinTHood folder is empty.' };
     }
     case 'READ': {
       const dir = await ctx.getFolder();
@@ -249,7 +249,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         }
         if (result.sources) sources.push(...result.sources);
         if (result.file) files.push(result.file);
-        if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ') {
+        if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ' || action.kind === 'LIST') {
           taint.web = true;
           if (action.kind === 'SEARCH') (result.sources || []).forEach((s) => taint.safeUrls.add(s.url));
         }

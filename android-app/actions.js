@@ -104,10 +104,17 @@ export function initialTaint(history) {
 export const CUT_OFF_RE = /\[cut off: file is \d+ characters\]/;
 // Basename with .md added, lowercased. Two files with the same name in different folders
 // share a key, so the check errs toward refusing.
+export function cleanName(name) {
+  let n = String(name || '').trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop();
+  n = n.replace(/[<>:"|?*\u0000-\u001f]/g, '').trim();
+  const extMatch = n.match(/\.([a-z0-9]{1,6})$/i);
+  const ext = extMatch ? extMatch[0] : '.md';
+  const base = extMatch ? n.slice(0, -ext.length).trim() : n.trim();
+  return `${base || 'note'}${ext}`.slice(0, 120);
+}
+
 export function fileKey(name) {
-  let n = String(name || '').trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop().toLowerCase();
-  if (!/\.[a-z0-9]{1,6}$/.test(n)) n += '.md';
-  return n;
+  return cleanName(name).toLowerCase();
 }
 
 // Some models (GPT-OSS especially) open the answer with a sentence or two of their own
