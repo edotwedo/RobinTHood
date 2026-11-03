@@ -10,7 +10,7 @@
 import { buildMessages, canSee, engineOrder, labelFor, runEngine } from './engines';
 import { hasImage, mapText } from './photos';
 import { pageRead, searchWeb } from './web';
-import { appendAll, appendFile, existsAll, fileExists, listAll, listFiles, readAll, readFile, searchAllFiles, searchLocalFiles, writeAll, writeFile } from './files';
+import { createAllFilesStore, createFolderStore } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, maskSensitive, mayCollect } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
@@ -74,10 +74,9 @@ const READ_PROBLEMS = {
 };
 
 // For the WRITE tap: does the file already exist? undefined when that can't be told.
-async function writeTargetExists(action, ctx) {
+async function writeTargetExists(action, store) {
   try {
-    if (ctx.allFiles) return await existsAll(action.arg);
-    return await fileExists(await ctx.getFolder(), action.arg);
+    return await store.exists(action.arg);
   } catch {
     return undefined;
   }
@@ -98,7 +97,7 @@ async function shareFileText(state, action, text) {
   return `The user chose not to share ${action.arg} with this model, because it has private details. Do not try to read it again; tell the user.`;
 }
 
-async function runAction(action, ctx) {
+async function runAction(action, ctx, store) {
   switch (action.kind) {
     case 'SEARCH': {
       if (!ctx.web) return { text: 'Web is switched off. Tell the user to tap the Web button if they want you to search.' };
@@ -113,35 +112,26 @@ async function runAction(action, ctx) {
       return { text: `Text of ${action.arg}:\n\n${wrapWeb(text)}`, sources: [{ title: host(action.arg), url: action.arg, opened: true }] };
     }
     case 'SEARCH_FILES': {
-      const dir = await ctx.getFolder();
-      const hits = ctx.allFiles ? await searchAllFiles(action.arg) : await searchLocalFiles(dir, action.arg);
+      const hits = await store.search(action.arg);
       if (!hits.length) return { text: `No matches found for "${action.arg}" in your notes.` };
-      const formatted = hits.map((h, i) => `[${i + 1}] ${h.file} (line ${h.line}):\n${h.snippet}`).join('\n\n');
+      const formatted = hits.map((h, i) => `[${i + 1}] ${h.file} (line ${h.line}${h.heading ? ', #' + h.heading : ''}):\n${h.snippet}`).join('\n\n');
       return { text: `Matches for "${action.arg}" in your notes:\n\n${wrapFile(formatted)}` };
     }
     case 'LIST': {
-      const dir = await ctx.getFolder();
-      if (ctx.allFiles) {
-        const names = await listAll(action.arg);
-        const where = action.arg || 'internal storage (top level)';
-        return { text: names.length ? `Contents of ${where}:\n\n${wrapFile(names.map((n) => `- ${n}`).join('\n'))}` : `${where} is empty.` };
-      }
-      const names = await listFiles(dir);
-      return { text: names.length ? `Files in the RobinTHood folder:\n\n${wrapFile(names.map((n) => `- ${n}`).join('\n'))}` : 'The RobinTHood folder is empty.' };
+      const names = await store.list(action.arg);
+      const where = action.arg || (ctx.allFiles ? 'internal storage' : 'the RobinTHood folder');
+      return { text: names.length ? `Files in ${where}:\n\n${wrapFile(names.map((n) => `- ${n}`).join('\n'))}` : `${where} is empty.` };
     }
     case 'READ': {
-      const dir = await ctx.getFolder();
-      const body = ctx.allFiles ? await readAll(action.arg) : await readFile(dir, action.arg);
+      const body = await store.read(action.arg);
       return { fileBody: body };
     }
     case 'WRITE': {
-      const dir = await ctx.getFolder();
-      const saved = ctx.allFiles ? await writeAll(action.arg, action.body) : await writeFile(dir, action.arg, action.body);
+      const saved = await store.write(action.arg, action.body);
       return { text: `${saved.replaced ? 'Overwrote' : 'Created'} ${saved.name} (${saved.chars} characters) in the user's RobinTHood folder.`, file: saved.name };
     }
     case 'APPEND': {
-      const dir = await ctx.getFolder();
-      const saved = ctx.allFiles ? await appendAll(action.arg, action.body) : await appendFile(dir, action.arg, action.body);
+      const saved = await store.append(action.arg, action.body);
       return { text: `${saved.appended ? 'Appended to' : 'Created'} ${saved.name} in the user's RobinTHood folder.`, file: saved.name };
     }
     default:
@@ -200,8 +190,9 @@ async function callModel(state, messages, onText, signal, onThinking) {
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
   const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
+  const store = ctx.fileStore || (ctx.allFiles ? createAllFilesStore() : createFolderStore(ctx.getFolder));
   const state = {
-    settings, ctx, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
+    settings, ctx, store, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
     webTurns: new Set(), fallbackOk: false, fallbackDeclined: false, mask: false,
     partialFiles: new Set(), // fileKey of every file a READ cut short in this message
   };
@@ -249,13 +240,13 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
           + 'delete the rest. Do not overwrite it; save the change to a new file and tell the user');
       }
       // No confirm handler means no tap is possible: refuse rather than run unchecked.
-      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, ctx);
+      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, state.store);
       const allowed = !needsConfirm(action, taint) || (ctx.confirm ? await ctx.confirm(action) : false);
       if (signal?.aborted) throw new Error('Stopped');
       if (!allowed) {
         result = { text: `The user declined ${action.kind}. Do not retry it; answer from what you have or ask the user.` };
       } else {
-        result = await runAction(action, ctx);
+        result = await runAction(action, ctx, state.store);
         if (result.fileBody !== undefined) {
           if (CUT_OFF_RE.test(result.fileBody)) state.partialFiles.add(fileKey(action.arg));
           result = { text: await shareFileText(state, action, result.fileBody) };

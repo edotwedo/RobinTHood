@@ -2,6 +2,16 @@
 // Auto-detects device language via Intl.
 
 export const SUPPORTED_LANGS = ['en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'hi'];
+export const LANG_NAMES = {
+  en: 'English',
+  es: 'Español',
+  fr: 'Français',
+  de: 'Deutsch',
+  pt: 'Português',
+  ja: '日本語',
+  zh: '中文',
+  hi: 'हिन्दी',
+};
 
 export function getDeviceLocale() {
   try {

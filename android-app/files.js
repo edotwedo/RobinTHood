@@ -6,6 +6,7 @@ import {
   StorageAccessFramework as SAF, documentDirectory, getInfoAsync, makeDirectoryAsync,
   readAsStringAsync, readDirectoryAsync, writeAsStringAsync,
 } from 'expo-file-system/legacy';
+import { getNoteDb, indexNote, searchFts } from './noteIndex.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
 // Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
@@ -135,9 +136,28 @@ export async function appendFile(dirUri, name, content) {
 }
 
 export async function searchLocalFiles(dirUri, query, maxHits = 6) {
-  const q = String(query || '').trim().toLowerCase();
+  const q = String(query || '').trim();
   if (!q) return [];
   const allNames = await listFiles(dirUri);
+  try {
+    const db = await getNoteDb();
+    if (db) {
+      const meta = await db.all('SELECT file FROM notes_meta');
+      const indexed = new Set((meta || []).map((r) => r.file));
+      for (const name of allNames) {
+        if (!indexed.has(name) && /\.(md|txt|markdown|csv)$/i.test(name)) {
+          try {
+            const body = await readFile(dirUri, name);
+            await indexNote(db, name, body);
+          } catch {}
+        }
+      }
+      const ftsHits = await searchFts(db, q, maxHits);
+      if (ftsHits && ftsHits.length > 0) return ftsHits;
+    }
+  } catch {}
+
+  const lowerQ = q.toLowerCase();
   const hits = [];
   for (const name of allNames) {
     if (!/\.(md|txt|markdown|csv)$/i.test(name)) continue;
@@ -146,7 +166,7 @@ export async function searchLocalFiles(dirUri, query, maxHits = 6) {
       const lines = text.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (line.toLowerCase().includes(q)) {
+        if (line.toLowerCase().includes(lowerQ)) {
           hits.push({ file: name, line: i + 1, snippet: line.trim().slice(0, 200) });
           if (hits.length >= maxHits) return hits;
         }
@@ -246,9 +266,30 @@ export async function appendAll(path, content) {
 }
 
 export async function searchAllFiles(query, folder = 'Documents/RobinTHood', maxHits = 6) {
-  const q = String(query || '').trim().toLowerCase();
+  const q = String(query || '').trim();
   if (!q) return [];
   const allNames = await listAll(folder);
+  try {
+    const db = await getNoteDb();
+    if (db) {
+      const meta = await db.all('SELECT file FROM notes_meta');
+      const indexed = new Set((meta || []).map((r) => r.file));
+      for (const item of allNames) {
+        if (item.endsWith('/') || !/\.(md|txt|markdown|csv)$/i.test(item)) continue;
+        if (!indexed.has(item)) {
+          try {
+            const filePath = folder ? `${folder.replace(/\/+$/, '')}/${item}` : item;
+            const body = await readAll(filePath);
+            await indexNote(db, item, body);
+          } catch {}
+        }
+      }
+      const ftsHits = await searchFts(db, q, maxHits);
+      if (ftsHits && ftsHits.length > 0) return ftsHits;
+    }
+  } catch {}
+
+  const lowerQ = q.toLowerCase();
   const hits = [];
   for (const item of allNames) {
     if (item.endsWith('/')) continue;
@@ -259,7 +300,7 @@ export async function searchAllFiles(query, folder = 'Documents/RobinTHood', max
       const lines = text.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (line.toLowerCase().includes(q)) {
+        if (line.toLowerCase().includes(lowerQ)) {
           hits.push({ file: item, line: i + 1, snippet: line.trim().slice(0, 200) });
           if (hits.length >= maxHits) return hits;
         }
@@ -267,4 +308,86 @@ export async function searchAllFiles(query, folder = 'Documents/RobinTHood', max
     } catch {}
   }
   return hits;
+}
+
+export function createFolderStore(getFolder) {
+  return {
+    async list(folder) {
+      const dir = await getFolder();
+      return listFiles(dir);
+    },
+    async exists(path) {
+      try {
+        const dir = await getFolder();
+        return await fileExists(dir, path);
+      } catch {
+        return undefined;
+      }
+    },
+    async read(path) {
+      const dir = await getFolder();
+      return readFile(dir, path);
+    },
+    async write(path, content) {
+      const dir = await getFolder();
+      const res = await writeFile(dir, path, content);
+      getNoteDb().then((db) => db && indexNote(db, cleanName(path), content)).catch(() => {});
+      return res;
+    },
+    async append(path, content) {
+      const dir = await getFolder();
+      const res = await appendFile(dir, path, content);
+      getNoteDb().then(async (db) => {
+        if (db) {
+          try {
+            const full = await readFile(dir, path);
+            await indexNote(db, cleanName(path), full);
+          } catch {}
+        }
+      }).catch(() => {});
+      return res;
+    },
+    async search(query, maxHits = 6) {
+      const dir = await getFolder();
+      return searchLocalFiles(dir, query, maxHits);
+    },
+  };
+}
+
+export function createAllFilesStore() {
+  return {
+    async list(folder) {
+      return listAll(folder || 'Documents/RobinTHood');
+    },
+    async exists(path) {
+      try {
+        return await existsAll(path);
+      } catch {
+        return undefined;
+      }
+    },
+    async read(path) {
+      return readAll(path);
+    },
+    async write(path, content) {
+      const res = await writeAll(path, content);
+      getNoteDb().then((db) => db && indexNote(db, cleanName(path), content)).catch(() => {});
+      return res;
+    },
+    async append(path, content) {
+      const res = await appendAll(path, content);
+      getNoteDb().then(async (db) => {
+        if (db) {
+          try {
+            const full = await readAll(path);
+            await indexNote(db, cleanName(path), full);
+          } catch {}
+        }
+      }).catch(() => {});
+      return res;
+    },
+    async search(query, maxHits = 6) {
+      return searchAllFiles(query, 'Documents/RobinTHood', maxHits);
+    },
+  };
 }
