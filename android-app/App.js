@@ -17,7 +17,7 @@ import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { wrapFile } from './actions';
-import { detectSensitive, markFor, maskSensitive, mayCollect } from './privacy';
+import { detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
 import { C } from './theme';
 
 import MessageRow from './components/MessageRow';

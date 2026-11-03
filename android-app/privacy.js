@@ -87,6 +87,88 @@ export function maskSensitive(text) {
   return { text: out + src.slice(last), count: found.length, found };
 }
 
+/**
+ * Bi-directional PII Tokenization for privacy-first cloud querying.
+ * Replaces real sensitive values with semantic placeholder variables ([EMAIL_1], [SECRET_1])
+ * and preserves a mapping so the client can restore the real values upon receiving the AI response.
+ */
+export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
+  let src = String(text || '');
+  const tokenMap = { ...existingMap };
+  const reverseMap = {};
+  for (const [k, v] of Object.entries(tokenMap)) {
+    reverseMap[v] = k;
+  }
+
+  // 1. Process custom user-defined vault entities (e.g. project codenames, client names)
+  if (customEntities && typeof customEntities === 'object') {
+    for (const [entityName, placeholder] of Object.entries(customEntities)) {
+      if (!entityName || !placeholder) continue;
+      if (src.includes(entityName)) {
+        src = src.split(entityName).join(placeholder);
+        tokenMap[placeholder] = entityName;
+        reverseMap[entityName] = placeholder;
+      }
+    }
+  }
+
+  // 2. Detect standard PII (emails, secrets, cards, phones, etc.)
+  const found = detectSensitive(src);
+  const typeCounts = {};
+
+  // Count existing types in tokenMap to maintain monotonic numbering
+  for (const placeholder of Object.keys(tokenMap)) {
+    const m = placeholder.match(/^\[([A-Z]+)_(\d+)\]$/);
+    if (m) {
+      const type = m[1];
+      const num = parseInt(m[2], 10);
+      typeCounts[type] = Math.max(typeCounts[type] || 0, num);
+    }
+  }
+
+  let out = '';
+  let last = 0;
+  let count = 0;
+
+  for (const f of found) {
+    const secretVal = f.text;
+    let placeholder = reverseMap[secretVal];
+
+    if (!placeholder) {
+      const tagType = f.type.toUpperCase();
+      typeCounts[tagType] = (typeCounts[tagType] || 0) + 1;
+      placeholder = `[${tagType}_${typeCounts[tagType]}]`;
+      tokenMap[placeholder] = secretVal;
+      reverseMap[secretVal] = placeholder;
+    }
+
+    out += src.slice(last, f.start) + placeholder;
+    last = f.end;
+    count++;
+  }
+
+  out += src.slice(last);
+  return {
+    tokenizedText: out,
+    tokenMap,
+    count,
+  };
+}
+
+/**
+ * Re-hydrates tokenized placeholders in an AI response back to the user's real local data.
+ */
+export function detokenizeText(text, tokenMap = {}) {
+  if (!text || !tokenMap || typeof tokenMap !== 'object') return text || '';
+  let out = String(text);
+  for (const [placeholder, original] of Object.entries(tokenMap)) {
+    if (placeholder && original !== undefined) {
+      out = out.split(placeholder).join(original);
+    }
+  }
+  return out;
+}
+
 // ---- Self check -----------------------------------------------------------------
 // Five quick questions, scored 0 to 2 each. The answers stay on the phone.
 export const SELF_CHECK = [

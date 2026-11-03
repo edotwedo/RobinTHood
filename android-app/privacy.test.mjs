@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assess, detectSensitive, markFor, maskSensitive, mayCollect, privacyOf, SELF_CHECK } from './privacy.js';
+import { assess, detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, privacyOf, SELF_CHECK, tokenizeSensitive } from './privacy.js';
 
 const types = (t) => detectSensitive(t).map((f) => f.type);
 
@@ -58,6 +58,43 @@ test('masking replaces only the sensitive parts and counts them', () => {
   assert.equal(r.text, 'Email [EMAIL], phone [PHONE], and plant tomatoes.');
   assert.equal(r.count, 2);
   assert.equal(maskSensitive('nothing here').text, 'nothing here');
+});
+
+test('tokenizeSensitive and detokenizeText provide bi-directional secret shielding', () => {
+  const input = 'Contact alice@corp.com or bob@other.org at 555-123-4567 regarding API key sk-abcdefghijklmnopqrstuvwx.';
+  const { tokenizedText, tokenMap } = tokenizeSensitive(input);
+
+  assert.match(tokenizedText, /\[EMAIL_1\]/);
+  assert.match(tokenizedText, /\[EMAIL_2\]/);
+  assert.match(tokenizedText, /\[PHONE_1\]/);
+  assert.match(tokenizedText, /\[SECRET_1\]/);
+  assert.ok(!tokenizedText.includes('alice@corp.com'));
+  assert.ok(!tokenizedText.includes('sk-abcdefghijklmnopqrstuvwx'));
+
+  // Simulated LLM answer containing the placeholders
+  const aiResponse = 'I have scheduled notifications to [EMAIL_1] and [EMAIL_2], calling [PHONE_1]. Your token [SECRET_1] was verified.';
+  const hydrated = detokenizeText(aiResponse, tokenMap);
+
+  assert.equal(
+    hydrated,
+    'I have scheduled notifications to alice@corp.com and bob@other.org, calling 555-123-4567. Your token sk-abcdefghijklmnopqrstuvwx was verified.'
+  );
+
+  // Custom vault entity replacement (e.g. secret project names or client names)
+  const vaultEntities = { 'Project Skynet': '[PROJECT_ALPHA]', 'Cyberdyne Systems': '[ORG_1]' };
+  const customInput = 'Deploy Project Skynet for Cyberdyne Systems using key sk-abcdefghijklmnopqrstuvwx.';
+  const res2 = tokenizeSensitive(customInput, {}, vaultEntities);
+
+  assert.match(res2.tokenizedText, /\[PROJECT_ALPHA\]/);
+  assert.match(res2.tokenizedText, /\[ORG_1\]/);
+  assert.match(res2.tokenizedText, /\[SECRET_1\]/);
+  assert.ok(!res2.tokenizedText.includes('Project Skynet'));
+
+  const aiRes2 = 'Confirmation: [PROJECT_ALPHA] is live at [ORG_1] with credentials [SECRET_1].';
+  assert.equal(
+    detokenizeText(aiRes2, res2.tokenMap),
+    'Confirmation: Project Skynet is live at Cyberdyne Systems with credentials sk-abcdefghijklmnopqrstuvwx.'
+  );
 });
 
 test('self check scores into three tiers', () => {

@@ -12,7 +12,7 @@ import { hasImage, mapText } from './photos';
 import { pageRead, searchWeb } from './web';
 import { createAllFilesStore, createFolderStore } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
-import { detectSensitive, maskSensitive, mayCollect } from './privacy';
+import { detectSensitive, detokenizeText, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
 
 export { needsConfirm, parseAction, stepLabel };
@@ -39,13 +39,17 @@ const ALL_FILE_TOOLS =
   'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line.\n' +
   'APPEND: <path>  -- add text to the end of a text file (or create it if missing). Put the text on the lines after APPEND.\n';
 
-export function toolPrompt({ web, allFiles }) {
+export function toolPrompt({ web, allFiles, hasTokens }) {
   return (
     'You can take real actions through the RobinTHood app:\n' +
     (web ? WEB_TOOLS : '') + (allFiles ? ALL_FILE_TOOLS : FILE_TOOLS) +
     'To take an action, reply with ONLY that action (the single line, plus the contents for WRITE) and nothing else. ' +
     'The app does it and sends you the result; then take another action or give your final answer. ' +
     `Up to ${MAX_STEPS} actions per message.\n` +
+    (hasTokens
+      ? '\nPRIVACY SHIELD ACTIVE: The message contains placeholder tokens like [EMAIL_1], [SECRET_1], [PHONE_1]. ' +
+        'Preserve all [PLACEHOLDER] tokens exactly as written in your response without alteration, guessing, or removal.\n'
+      : '') +
     (web
       ? 'Use the web whenever the question involves anything current, local, specific or checkable ' +
         '(news, weather, prices, scores, hours, people, products, recent events), or when you are not sure. ' +
@@ -189,7 +193,9 @@ async function callModel(state, messages, onText, signal, onThinking) {
 // onEvent({ type: 'model'|'step'|'text'|'thinking', ... }) keeps the screen updated.
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
-  const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles }));
+  const tokenMap = ctx.tokenMap || {};
+  const hasTokens = Object.keys(tokenMap).length > 0;
+  const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles, hasTokens }));
   const store = ctx.fileStore || (ctx.allFiles ? createAllFilesStore() : createFolderStore(ctx.getFolder));
   const state = {
     settings, ctx, store, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
@@ -213,15 +219,18 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         'events, dates, times, prices, places, names or quotes, and do not describe your plan; just answer.' });
     }
     const { id, text } = await callModel(state, messages, (partial) => {
-      if (finalTurn || !looksLikeAction(partial)) onEvent({ type: 'text', text: partial, model: labelFor(state.order[state.engineIndex], settings) });
+      const display = hasTokens ? detokenizeText(partial, tokenMap) : partial;
+      if (finalTurn || !looksLikeAction(partial)) onEvent({ type: 'text', text: display, model: labelFor(state.order[state.engineIndex], settings) });
     }, signal, (thinking, engineId) => onEvent({ type: 'thinking', text: thinking, model: labelFor(engineId, settings) }));
     usedId = id;
     onEvent({ type: 'model', model: labelFor(id, settings) });
 
     const action = finalTurn ? null : parseAction(text);
     if (!action) {
+      const cleanAnswer = stripPlanning(text.trim());
+      const hydratedText = hasTokens ? detokenizeText(cleanAnswer, tokenMap) : cleanAnswer;
       return {
-        ok: true, id, model: labelFor(id, settings), text: stripPlanning(text.trim()), steps, sources: dedupe(sources), files,
+        ok: true, id, model: labelFor(id, settings), text: hydratedText, steps, sources: dedupe(sources), files,
         tainted: taint.web,
         seconds: (Date.now() - started) / 1000,
         fellBack: settings.selectedModel !== 'auto' && id !== settings.selectedModel,
@@ -246,6 +255,9 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
       if (!allowed) {
         result = { text: `The user declined ${action.kind}. Do not retry it; answer from what you have or ask the user.` };
       } else {
+        if (hasTokens && (action.kind === 'WRITE' || action.kind === 'APPEND') && action.body) {
+          action.body = detokenizeText(action.body, tokenMap);
+        }
         result = await runAction(action, ctx, state.store);
         if (result.fileBody !== undefined) {
           if (CUT_OFF_RE.test(result.fileBody)) state.partialFiles.add(fileKey(action.arg));
@@ -266,8 +278,8 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     const echo = action.kind === 'LIST' ? `LIST FILES${action.arg ? `: ${action.arg}` : ''}` : action.kind === 'WRITE'
       ? `WRITE: ${action.arg}\n${action.body.length > 1500 ? action.body.slice(0, 1500) + '\n[...]' : action.body}`
       : `${action.kind}: ${action.arg}`;
-    // Once the user chose to mask for a * model, everything after is masked too.
-    const out = (s) => (state.mask ? maskSensitive(s).text : s);
+    // Once the user chose to mask or tokenize for a * model, tool output is sanitized too.
+    const out = (s) => (state.mask ? maskSensitive(s).text : (hasTokens ? tokenizeSensitive(s, tokenMap).tokenizedText : s));
     const resultMsg = { role: 'user', content: out(`RESULT of ${echo.split('\n')[0]}\n\n${result.text}\n\n(Next: another action, or your final answer.)`) };
     if (action.kind === 'SEARCH' || action.kind === 'OPEN') state.webTurns.add(resultMsg);
     messages.push({ role: 'assistant', content: out(echo) });
