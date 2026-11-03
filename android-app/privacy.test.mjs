@@ -116,12 +116,16 @@ test('parseVaultSecrets and parseFrontmatterEntities extract shielded entities f
 
   const jsonList = JSON.stringify(['Project Apollo', 'Top Secret Key']);
   assert.deepEqual(parseVaultSecrets(jsonList), {
-    'Project Apollo': '[PROJECT_APOLLO]',
-    'Top Secret Key': '[TOP_SECRET_KEY]',
+    'Project Apollo': '[ENTITY_1]',
+    'Top Secret Key': '[ENTITY_2]',
   });
 
   // Invalid JSON should return empty object gracefully
   assert.deepEqual(parseVaultSecrets('{ invalid json'), {});
+
+  // Prototype pollution protection
+  const polluted = JSON.stringify({ '__proto__': 'evil', 'constructor': 'evil', 'Valid Key': '[VAL]' });
+  assert.deepEqual(parseVaultSecrets(polluted), { 'Valid Key': '[VAL]' });
 
   // 2. Obsidian Markdown Frontmatter parsing
   const mdWithList = `---
@@ -136,8 +140,8 @@ tags:
 Discuss Operation Starlight with the team.
 `;
   assert.deepEqual(parseFrontmatterEntities(mdWithList), {
-    'Operation Starlight': '[OPERATION_STARLIGHT]',
-    'Target Alpha': '[TARGET_ALPHA]',
+    'Operation Starlight': '[ENTITY_1]',
+    'Target Alpha': '[ENTITY_2]',
   });
 
   const mdWithDict = `---
@@ -152,7 +156,49 @@ Notes here.
     'Project X': '[PRJ_X]',
   });
 
+  // Inline array in frontmatter and UTF-8 BOM handling
+  const mdWithInlineAndBom = `\uFEFF---
+secrets: [Operation Starlight, "Target Alpha"]
+---
+`;
+  assert.deepEqual(parseFrontmatterEntities(mdWithInlineAndBom), {
+    'Operation Starlight': '[ENTITY_1]',
+    'Target Alpha': '[ENTITY_2]',
+  });
+
   // Markdown without frontmatter
   assert.deepEqual(parseFrontmatterEntities('# Regular note with no frontmatter'), {});
+
+  // Existing entities collision prevention and monotonic numbering
+  const existing = { 'Prior Secret': '[ENTITY_1]', 'Operation Starlight': '[ENTITY_0]' };
+  const mergedEntities = parseFrontmatterEntities(mdWithList, { existingEntities: existing });
+  assert.equal(mergedEntities['Operation Starlight'], '[ENTITY_0]', 'Reuses existing placeholder');
+  assert.equal(mergedEntities['Target Alpha'], '[ENTITY_2]', 'Allocates next unused index to avoid collision');
+
+  // Explicit duplicate placeholder and tokenMap collision protection
+  const dupDict = JSON.stringify({ 'Secret A': '[SHARED]', 'Secret B': '[SHARED]' });
+  const parsedDup = parseVaultSecrets(dupDict, { tokenMap: { '[ENTITY_1]': 'something' } });
+  assert.equal(parsedDup['Secret A'], '[SHARED]');
+  assert.notEqual(parsedDup['Secret B'], '[SHARED]', 'Does not assign same explicit token to two secrets');
+  assert.equal(parsedDup['Secret B'], '[ENTITY_2]', 'Skips [ENTITY_1] present in tokenMap');
+});
+
+test('tokenizeSensitive and detokenizeText handle substrings and length descending ordering', () => {
+  // Longest substring replaced first: "Acme Corporation" before "Acme"
+  const customEntities = {
+    'Acme': '[ENTITY_1]',
+    'Acme Corporation': '[ENTITY_2]',
+  };
+  const text = 'Welcome to Acme Corporation and Acme branch.';
+  const { tokenizedText, tokenMap } = tokenizeSensitive(text, {}, customEntities);
+  assert.equal(tokenizedText, 'Welcome to [ENTITY_2] and [ENTITY_1] branch.');
+
+  // Detokenize handles longer tokens first so [ENTITY_10] is not broken by [ENTITY_1]
+  const placeholderMap = {
+    '[ENTITY_1]': 'Short',
+    '[ENTITY_10]': 'Longer Ten',
+  };
+  const tokenizedResponse = 'Result: [ENTITY_10] and [ENTITY_1].';
+  assert.equal(detokenizeText(tokenizedResponse, placeholderMap), 'Result: Longer Ten and Short.');
 });
 

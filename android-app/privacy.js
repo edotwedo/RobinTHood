@@ -102,8 +102,11 @@ export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
 
   // 1. Process custom user-defined vault entities (e.g. project codenames, client names)
   if (customEntities && typeof customEntities === 'object') {
-    for (const [entityName, placeholder] of Object.entries(customEntities)) {
-      if (!entityName || !placeholder) continue;
+    const sortedEntities = Object.entries(customEntities)
+      .filter(([k, v]) => k && v && typeof k === 'string')
+      .sort((a, b) => b[0].length - a[0].length);
+
+    for (const [entityName, placeholder] of sortedEntities) {
       if (src.includes(entityName)) {
         src = src.split(entityName).join(placeholder);
         tokenMap[placeholder] = entityName;
@@ -148,6 +151,9 @@ export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
   }
 
   out += src.slice(last);
+  if (existingMap && typeof existingMap === 'object') {
+    Object.assign(existingMap, tokenMap);
+  }
   return {
     tokenizedText: out,
     tokenMap,
@@ -161,8 +167,13 @@ export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
 export function detokenizeText(text, tokenMap = {}) {
   if (!text || !tokenMap || typeof tokenMap !== 'object') return text || '';
   let out = String(text);
-  for (const [placeholder, original] of Object.entries(tokenMap)) {
-    if (placeholder && original !== undefined) {
+  const sortedPlaceholders = Object.keys(tokenMap)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  for (const placeholder of sortedPlaceholders) {
+    const original = tokenMap[placeholder];
+    if (original !== undefined) {
       out = out.split(placeholder).join(original);
     }
   }
@@ -219,12 +230,46 @@ export function assess(answers) {
   return { score, tier, ...result };
 }
 
-export function entityToPlaceholder(name) {
-  const clean = String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return `[${clean || 'SECRET'}]`;
+export function entityToPlaceholder(name, index = 1) {
+  const str = String(name || '').trim();
+  if (str.startsWith('[') && str.endsWith(']')) return str;
+  return `[ENTITY_${index}]`;
 }
 
-export function parseVaultSecrets(content) {
+const isSafeKey = (k) => k !== '__proto__' && k !== 'constructor' && k !== 'prototype';
+
+function allocatePlaceholder(name, explicitPlaceholder, existingEntities, result, counter, tokenMap) {
+  if (existingEntities && existingEntities[name]) {
+    return existingEntities[name];
+  }
+  if (result && result[name]) {
+    return result[name];
+  }
+  const used = new Set();
+  if (tokenMap && typeof tokenMap === 'object') {
+    for (const k of Object.keys(tokenMap)) used.add(k);
+  }
+  if (existingEntities && typeof existingEntities === 'object') {
+    for (const val of Object.values(existingEntities)) used.add(val);
+  }
+  if (result && typeof result === 'object') {
+    for (const val of Object.values(result)) used.add(val);
+  }
+
+  const str = String(explicitPlaceholder || '').trim();
+  if (str.startsWith('[') && str.endsWith(']')) {
+    if (!used.has(str)) {
+      return str;
+    }
+  }
+
+  while (used.has(`[ENTITY_${counter.idx}]`)) {
+    counter.idx++;
+  }
+  return `[ENTITY_${counter.idx++}]`;
+}
+
+export function parseVaultSecrets(content, { startIndex = 1, existingEntities = {}, tokenMap = {} } = {}) {
   if (!content) return {};
   let parsed;
   if (typeof content === 'object') {
@@ -237,38 +282,58 @@ export function parseVaultSecrets(content) {
     }
   }
   const result = {};
+  const counter = { idx: startIndex || 1 };
   if (Array.isArray(parsed)) {
     for (const item of parsed) {
       if (typeof item === 'string' && item.trim()) {
-        result[item.trim()] = entityToPlaceholder(item);
+        const k = item.trim();
+        if (isSafeKey(k)) result[k] = allocatePlaceholder(k, null, existingEntities, result, counter, tokenMap);
       } else if (item && typeof item === 'object') {
         for (const [k, v] of Object.entries(item)) {
-          if (k.trim()) result[k.trim()] = String(v).startsWith('[') ? String(v) : entityToPlaceholder(v);
+          const trimmedK = k.trim();
+          if (trimmedK && isSafeKey(trimmedK)) {
+            result[trimmedK] = allocatePlaceholder(trimmedK, v, existingEntities, result, counter, tokenMap);
+          }
         }
       }
     }
   } else if (parsed && typeof parsed === 'object') {
     for (const [k, v] of Object.entries(parsed)) {
-      if (k.trim()) {
-        result[k.trim()] = (typeof v === 'string' && v.startsWith('[')) ? v : entityToPlaceholder(v || k);
+      const trimmedK = k.trim();
+      if (trimmedK && isSafeKey(trimmedK)) {
+        result[trimmedK] = allocatePlaceholder(trimmedK, typeof v === 'string' ? v : null, existingEntities, result, counter, tokenMap);
       }
     }
   }
   return result;
 }
 
-export function parseFrontmatterEntities(text) {
+export function parseFrontmatterEntities(text, { startIndex = 1, existingEntities = {}, tokenMap = {} } = {}) {
   if (!text || typeof text !== 'string') return {};
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const cleaned = text.replace(/^\uFEFF/, '');
+  const match = cleaned.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
   const frontmatter = match[1];
   const lines = frontmatter.split(/\r?\n/);
   const entities = {};
   let inSecretsBlock = false;
+  const counter = { idx: startIndex || 1 };
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const inlineMatch = trimmed.match(/^(?:secrets|shield|vault_secrets):\s*\[(.*?)\]\s*$/i);
+    if (inlineMatch) {
+      const rawItems = inlineMatch[1].split(',');
+      for (const item of rawItems) {
+        const cleanedItem = item.trim().replace(/^["']|["']$/g, '').trim();
+        if (cleanedItem && isSafeKey(cleanedItem)) {
+          entities[cleanedItem] = allocatePlaceholder(cleanedItem, null, existingEntities, entities, counter, tokenMap);
+        }
+      }
+      continue;
+    }
 
     if (/^(?:secrets|shield|vault_secrets):\s*$/i.test(trimmed)) {
       inSecretsBlock = true;
@@ -287,9 +352,13 @@ export function parseFrontmatterEntities(text) {
         if (kvMatch) {
           const k = kvMatch[1].trim().replace(/^["']|["']$/g, '');
           const v = kvMatch[2].trim().replace(/^["']|["']$/g, '');
-          entities[k] = v.startsWith('[') ? v : entityToPlaceholder(v);
+          if (isSafeKey(k)) {
+            entities[k] = allocatePlaceholder(k, v, existingEntities, entities, counter, tokenMap);
+          }
         } else {
-          entities[item] = entityToPlaceholder(item);
+          if (isSafeKey(item)) {
+            entities[item] = allocatePlaceholder(item, null, existingEntities, entities, counter, tokenMap);
+          }
         }
         continue;
       }
@@ -298,10 +367,9 @@ export function parseFrontmatterEntities(text) {
       if (kvMatch) {
         const k = kvMatch[1].trim().replace(/^["']|["']$/g, '');
         const v = kvMatch[2].trim().replace(/^["']|["']$/g, '');
-        if (v && v !== 'true' && v !== 'false') {
-          entities[k] = v.startsWith('[') ? v : entityToPlaceholder(v);
-        } else {
-          entities[k] = entityToPlaceholder(k);
+        if (isSafeKey(k)) {
+          const explicitVal = (v && v !== 'true' && v !== 'false') ? v : null;
+          entities[k] = allocatePlaceholder(k, explicitVal, existingEntities, entities, counter, tokenMap);
         }
       }
     }

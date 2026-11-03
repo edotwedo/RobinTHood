@@ -356,48 +356,59 @@ export function createFolderStore(getFolder) {
 }
 
 export function createAllFilesStore(defaultFolder = 'Documents/RobinTHood') {
+  const cleanDefault = String(defaultFolder || 'Documents/RobinTHood').trim().replace(/^\/+|\/+$/g, '');
+  const resolveStorePath = (path = '') => {
+    let clean = String(path || '').trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^\/+/, '');
+    if (clean === cleanDefault || clean.startsWith(cleanDefault + '/')) {
+      return clean;
+    }
+    return clean ? `${cleanDefault}/${clean}` : cleanDefault;
+  };
+
   return {
     async list(folder) {
-      return listAll(folder || defaultFolder);
+      return listAll(resolveStorePath(folder || ''));
     },
     async exists(path) {
       try {
-        return await existsAll(path);
+        return await existsAll(resolveStorePath(path));
       } catch {
         return undefined;
       }
     },
     async read(path) {
-      return readAll(path);
+      return readAll(resolveStorePath(path));
     },
     async write(path, content) {
-      const res = await writeAll(path, content);
-      getNoteDb().then((db) => db && indexNote(db, cleanName(path), content)).catch(() => {});
+      const resolved = resolveStorePath(path);
+      const res = await writeAll(resolved, content);
+      getNoteDb().then((db) => db && indexNote(db, cleanName(resolved), content)).catch(() => {});
       return res;
     },
     async append(path, content) {
-      const res = await appendAll(path, content);
+      const resolved = resolveStorePath(path);
+      const res = await appendAll(resolved, content);
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readAll(path);
-            await indexNote(db, cleanName(path), full);
+            const full = await readAll(resolved);
+            await indexNote(db, cleanName(resolved), full);
           } catch {}
         }
       }).catch(() => {});
       return res;
     },
     async search(query, maxHits = 6) {
-      return searchAllFiles(query, defaultFolder, maxHits);
+      return searchAllFiles(query, cleanDefault, maxHits);
     },
   };
 }
 
-export async function loadVaultSecrets(store) {
+export async function loadVaultSecrets(store, options = {}) {
   if (!store || typeof store.read !== 'function') return {};
   try {
     const content = await store.read('_vault_secrets.json');
-    if (content) return parseVaultSecrets(content);
+    if (content) return parseVaultSecrets(content, options);
   } catch {}
   return {};
 }

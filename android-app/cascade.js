@@ -27,3 +27,29 @@ export function userTextOf(messages, webTurns = new Set()) {
     .map((m) => textOf(m.content))
     .join('\n');
 }
+
+export const KEYLESS_ENGINE_IDS = [
+  'ovh-120b',
+  'ovh-qwen-big',
+  'ovh-qwen',
+  'ovh-qwen-vl',
+  'kilo-cohere',
+  'kilo-auto',
+];
+
+const VISION_IDS = new Set(['ovh-qwen-big', 'ovh-qwen-vl', 'kilo-auto']);
+export const canSee = (id) => VISION_IDS.has(id);
+
+export function engineOrder(settings = {}, { vision = false } = {}) {
+  if (settings?.airGapped) {
+    return ['ollama'];
+  }
+  const chosen = settings?.selectedModel || 'auto';
+  const cascade = [];
+  if (chosen !== 'auto') cascade.push(chosen);
+  if (settings?.ollamaUrl) cascade.push('ollama');
+  for (const id of KEYLESS_ENGINE_IDS) cascade.push(id);
+  if (settings?.openRouterKey) cascade.push('openrouter');
+  const own = (id) => id === chosen && (id === 'ollama' || id === 'openrouter');
+  return [...new Set(cascade)].filter((id) => !vision || canSee(id) || own(id));
+}

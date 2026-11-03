@@ -139,6 +139,7 @@ function Chat() {
 
   const abortRef = useRef(null);
   const pendingAskRef = useRef(null);
+  const tokenMapRef = useRef({});
 
   // Unified ask helper for confirmations
   const ask = useCallback(({ title, body, buttons, cancelValue = false }) => {
@@ -250,6 +251,7 @@ function Chat() {
           web: activeSettings.webSearch,
           allFiles: ALL_FILES,
           defaultFolder: effectiveFolder,
+          tokenMap: tokenMapRef.current,
           lang: activeSettings.lang || 'en',
           getFolder: async () => {
             if (IS_IOS) return iosFolder();
@@ -359,6 +361,7 @@ function Chat() {
 
   const newChat = () => {
     if (busy) stop();
+    tokenMapRef.current = {};
     setMessages([INTRO]);
   };
 

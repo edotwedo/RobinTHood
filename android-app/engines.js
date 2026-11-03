@@ -226,16 +226,8 @@ export function labelFor(id, settings) {
 // With { vision: true } (a photo is in the request) only engines known to read photos.
 // The user's own Ollama or OpenRouter model is unknown, so it is tried only when it is
 // the one they picked: a text-only model there would ignore the photo and guess.
-export function engineOrder(settings, { vision = false } = {}) {
-  const chosen = settings.selectedModel || 'auto';
-  const cascade = [];
-  if (chosen !== 'auto') cascade.push(chosen);
-  if (settings.ollamaUrl) cascade.push('ollama');
-  for (const e of KEYLESS_ENGINES) cascade.push(e.id);
-  if (settings.openRouterKey) cascade.push('openrouter');
-  const own = (id) => id === chosen && (id === 'ollama' || id === 'openrouter');
-  return [...new Set(cascade)].filter((id) => !vision || canSee(id) || own(id));
-}
+import { engineOrder } from './cascade.js';
+export { engineOrder };
 
 export async function complete({ history, settings, onChunk, signal }) {
   const messages = buildMessages(history);

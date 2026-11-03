@@ -1,7 +1,7 @@
 // node --test android-app/cascade.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fallbackNeedsConsent, userTextOf } from './cascade.js';
+import { engineOrder, fallbackNeedsConsent, userTextOf } from './cascade.js';
 
 test('a model with no * never falls to a * model without asking', () => {
   assert.equal(fallbackNeedsConsent('ovh-120b', 'ovh-qwen'), false);
@@ -39,4 +39,13 @@ test('the sensitive-data check sees user text and files, not web pages', () => {
   assert.match(text, /4111/);
   assert.match(text, /me@home\.com/);
   assert.doesNotMatch(text, /page\.com|sys\.com/);
+});
+
+test('engineOrder strictly restricts to local ollama when air-gapped', () => {
+  assert.deepEqual(engineOrder({ airGapped: true }), ['ollama']);
+  assert.deepEqual(engineOrder({ airGapped: true, selectedModel: 'ovh-120b', ollamaUrl: 'http://127.0.0.1:11434' }), ['ollama']);
+  // When not air-gapped, cascade includes chosen and keyless engines
+  const normal = engineOrder({ selectedModel: 'ovh-120b' });
+  assert.equal(normal[0], 'ovh-120b');
+  assert.ok(normal.length > 1);
 });

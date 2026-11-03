@@ -24,9 +24,6 @@ module.exports = ({ config }) => {
   const personal = process.env.ROBIN_ALL_FILES === '1';
   // Search worker signing key, from CI secrets. Without it the app skips the worker.
   const robinSecret = process.env.ROBIN_CLIENT_SECRET || '';
-  // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
-  // blocks in release builds unless cleartext is allowed. Every other address the app
-  // uses is https.
   // Real AdMob IDs, injected at build time (CI secrets) so no test IDs reach a release.
   // The app IDs live on the plugin; the banner unit IDs reach the app through extra.
   const admob = {
@@ -42,6 +39,9 @@ module.exports = ({ config }) => {
   });
   const ads = { adMobBannerAndroid: admob.androidBanner, adMobBannerIos: admob.iosBanner };
 
+  // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
+  // blocks in release builds unless cleartext is allowed. Every other address the app
+  // uses is https.
   const baseConfig = withAdMobCompatibility({
     ...config,
     plugins: [...plugins, ['expo-build-properties', { android: { usesCleartextTraffic: true } }]],
