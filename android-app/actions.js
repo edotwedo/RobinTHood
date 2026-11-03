@@ -45,7 +45,9 @@ export function parseAction(text) {
   if (kind === 'WRITE') {
     let body = text.slice(m.index + m[0].length).replace(/^\r?\n/, '');
     const fenced = body.match(/^\s*```[\w-]*\n([\s\S]*?)\n```\s*$/);
-    if (fenced) body = fenced[1];
+    // Only unwrap one fence around the whole file. A note that starts with one code block
+    // and ends with another would otherwise lose its inner fences.
+    if (fenced && !/^\s*```/m.test(fenced[1])) body = fenced[1];
     return { kind, arg, body: body.replace(/\s+$/, '') + '\n' };
   }
   return { kind, arg };
@@ -83,6 +85,29 @@ export function needsConfirm(action, taint) {
   if (action.kind === 'SEARCH') return false;
   if (action.kind === 'OPEN') return !taint.safeUrls.has(action.arg);
   return true;
+}
+
+// Taint at the start of a message. Earlier replies built on web pages or files, and any
+// attachment or photo, mean planted text may already be in the history the model sees.
+// Only URLs the user typed are safe: an attached file's text sits in `content` too, so
+// for those messages only `typed` counts.
+export function initialTaint(history) {
+  const earlierSources = history.filter((m) => m.role === 'assistant' && m.sources?.length).flatMap((m) => m.sources);
+  const untrusted = earlierSources.length > 0 || history.some((m) => m.attachment || m.image || m.tainted);
+  const typed = history.filter((m) => m.role === 'user').map((m) => String((m.attachment ? m.typed : m.content) || ''));
+  return { web: untrusted, safeUrls: new Set([...typed.flatMap(urlsIn), ...earlierSources.map((s) => s.url)]) };
+}
+
+// files.js adds this marker when a READ stops at the size limit. A WRITE whose body has
+// it, or that targets a file Robin only saw part of, would replace the whole file with
+// the part Robin saw.
+export const CUT_OFF_RE = /\[cut off: file is \d+ characters\]/;
+// Basename with .md added, lowercased. Two files with the same name in different folders
+// share a key, so the check errs toward refusing.
+export function fileKey(name) {
+  let n = String(name || '').trim().replace(/^["'`]+|["'`]+$/g, '').split(/[\\/]/).pop().toLowerCase();
+  if (!/\.[a-z0-9]{1,6}$/.test(n)) n += '.md';
+  return n;
 }
 
 // Some models (GPT-OSS especially) open the answer with a sentence or two of their own

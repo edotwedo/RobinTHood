@@ -490,6 +490,7 @@ function Chat() {
           seconds: result.seconds,
           sources: result.sources,
           steps: result.steps,
+          tainted: result.tainted || undefined,
           note: result.forPhoto ? `${labelFor(settings.selectedModel, settings)} can't see photos, so ${result.model} answered`
             : result.fellBack ? `${labelFor(settings.selectedModel, settings)} failed, used ${result.model}` : undefined,
           pending: false,

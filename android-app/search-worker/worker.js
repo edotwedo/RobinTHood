@@ -103,6 +103,26 @@ async function signedRequestLimited(env, ip, rawBody) {
   return overLimit(env.RATE_LIMITER, `signed:${ip}:${installOf(rawBody)}`, SIGNED_LIMIT_PER_MIN);
 }
 
+// Reads at most MAX_BODY_CHARS bytes, whatever Content-Length claims; null when longer.
+// request.text() would buffer the whole upload in the isolate before any size check.
+async function readCappedBody(request) {
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_CHARS) { await reader.cancel().catch(() => {}); return null; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.byteLength; }
+  return new TextDecoder().decode(all);
+}
+
 function tooLarge() {
   return new Response(JSON.stringify({ error: 'Request too large' }), {
     status: 413,
@@ -448,8 +468,8 @@ export default {
           });
         }
 
-        const rawBody = await request.text();
-        if (rawBody.length > MAX_BODY_CHARS) return tooLarge();
+        const rawBody = await readCappedBody(request);
+        if (rawBody === null) return tooLarge();
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {
@@ -557,8 +577,8 @@ export default {
           });
         }
 
-        const rawBody = await request.text();
-        if (rawBody.length > MAX_BODY_CHARS) return tooLarge();
+        const rawBody = await readCappedBody(request);
+        if (rawBody === null) return tooLarge();
         const auth = await verifyAppSignature(request, rawBody, clientSecret, env, clientIp);
         if (auth.limited) return rateLimitResponse();
         if (!auth.ok) {

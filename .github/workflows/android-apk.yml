@@ -100,8 +100,8 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
-      - name: Unit tests (URL safety, Markdown, Privacy)
-        run: node --test urlsafety.test.mjs markdown.test.mjs privacy.test.mjs
+      - name: Unit tests (every *.test.mjs)
+        run: node --test *.test.mjs
 
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
