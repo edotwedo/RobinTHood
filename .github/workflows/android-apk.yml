@@ -205,6 +205,34 @@ jobs:
             --title "RobinTHood Android (latest build)" \
             --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Phone install: RobinTHood.apk. Play Console upload: the .aab bundle."
 
+      # Automatically deploy the signed Play bundle directly to Google Play Closed Testing track (track001)
+      - name: Deploy to Google Play Closed Testing (track001)
+        if: (github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild') && secrets.PLAY_SERVICE_ACCOUNT_JSON != ''
+        working-directory: .
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ ! -f "android-app/dist/RobinTHood-play.aab" ]; then
+            echo "Signed Play bundle not found; skipping Play deployment."
+            exit 0
+          fi
+          echo "$PLAY_SERVICE_ACCOUNT_JSON" > play_key.json
+          trap 'rm -f play_key.json' EXIT
+          PYTHON_CMD=""
+          if command -v python3 >/dev/null 2>&1; then
+            PYTHON_CMD="python3"
+          elif command -v python >/dev/null 2>&1; then
+            PYTHON_CMD="python"
+          elif command -v py >/dev/null 2>&1; then
+            PYTHON_CMD="py -3"
+          fi
+          if [ -z "$PYTHON_CMD" ]; then
+            echo "Python not found on runner; skipping Play deployment."
+            exit 0
+          fi
+          $PYTHON_CMD -m pip install --quiet google-api-python-client google-auth
+          PLAY_SERVICE_ACCOUNT_KEY=play_key.json $PYTHON_CMD scripts/play_status.py --deploy android-app/dist/RobinTHood-play.aab --track track001
+
   # iPhone: proves the native iOS app compiles (simulator build, no signing).
   # Installing on real iPhones needs an Apple Developer account + TestFlight.
   ios:

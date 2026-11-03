@@ -2,7 +2,7 @@
   "expo": {
     "name": "RobinTHood",
     "slug": "robinthood",
-    "version": "0.8.4",
+    "version": "0.8.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.edotwedo.robinthood",
-      "versionCode": 23,
+      "versionCode": 24,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {

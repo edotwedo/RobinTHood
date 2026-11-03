@@ -165,7 +165,9 @@ function Chat() {
         if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s), ...(__DEV__ ? {} : { isPro: false }) });
         if (c) {
           const saved = JSON.parse(c);
-          if (Array.isArray(saved) && saved.length) setMessages(saved);
+          if (Array.isArray(saved) && saved.length) {
+            setMessages(saved.map((m) => (m.id === 'intro' ? { ...m, content: INTRO.content } : m)));
+          }
         }
       } catch {}
       setLoaded(true);
