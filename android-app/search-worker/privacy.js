@@ -27,7 +27,7 @@ install ID are stored only on your phone. They are not backed up to Google by th
 new chat or uninstalling the app deletes them.</p>
 
 <h2>What goes to AI services</h2>
-<p>RobinTHood has no AI of its own. To answer, it sends your message and the recent chat that goes
+<p>RobinTHood orchestrates multiple AI models. To answer, it sends your message and the recent chat that goes
 with it to the AI service in use, along with any photo or file you attach and any file you allow
 Robin to read. Depending on the model, that is:</p>
 <ul>

@@ -29,7 +29,7 @@ What it can do
 • Reply in English, Spanish, French, German, Portuguese, Japanese, Chinese or Hindi
 
 How it's free
-Robin has no AI of its own. It uses free AI services and moves between them when one is
+RobinTHood orchestrates multiple AI models and moves between them when one is
 busy. You can pick the model yourself. A * next to a model means that service may keep the
 messages sent to it. Robin tells you before it switches to one of those, and offers to
 mask things like emails, phone numbers and card numbers first.

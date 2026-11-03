@@ -52,7 +52,7 @@ const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. How it works: Robin has no AI of its own. It hops between free services, and we do that work for you. A * next to a model means it may collect your messages. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
+  content: 'RobinTHood is ready. Free AI, no account. How it works: Robin routes between multiple leading AI models so you get fast, reliable answers without subscriptions. A * next to a model means it may collect your messages. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
   model: 'RobinTHood',
 };
 
