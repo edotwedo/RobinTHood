@@ -140,6 +140,9 @@
   .kicker { margin-bottom: 14px; }
   .grid-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin-top: 36px; }
   @media(max-width: 820px) { .grid-three { grid-template-columns: 1fr; } }
+  .grid-four { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-top: 36px; }
+  @media(max-width: 1040px) { .grid-four { grid-template-columns: repeat(2, 1fr); } }
+  @media(max-width: 640px) { .grid-four { grid-template-columns: 1fr; } }
   .card {
     background: var(--paper-card);
     border: 1px solid var(--line);
@@ -214,6 +217,7 @@
     <nav class="links" aria-label="Sections">
       <a href="#features">Features</a>
       <a href="#privacy">Privacy</a>
+      <a href="#security-note">Security</a>
       <a href="#about">About</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">GitHub</a>
@@ -263,7 +267,7 @@
     <div class="wrap">
       <span class="eyebrow kicker">Built for Real Life</span>
       <h2>Everything locked behind $20/month AI, free.</h2>
-      <div class="grid-three">
+      <div class="grid-four">
         <article class="card">
           <div class="icon-num">01 / SEARCH</div>
           <h3>Live Web Search & Sources</h3>
@@ -275,8 +279,13 @@
           <p>Attach a photo, a screenshot, or a text document. Robin inspects receipts, summarizes long notes, debugs code snippets, and translates foreign text on demand.</p>
         </article>
         <article class="card">
-          <div class="icon-num">03 / PRIVACY</div>
-          <h3>Zero Account Friction</h3>
+          <div class="icon-num">03 / PERSISTENCE</div>
+          <h3>Device Markdown (.md) Files</h3>
+          <p>Pick a folder once. Robin can list your files, read your notes, and write clean <code>.md</code> documents straight to your phone. Works seamlessly with your Files app and Obsidian.</p>
+        </article>
+        <article class="card">
+          <div class="icon-num">04 / ZERO FRICTION</div>
+          <h3>No Accounts or Paywalls</h3>
           <p>No passwords, no email verification, no monthly billing cycles. Your chats stay on your phone, and built-in privacy filters automatically mask emails and card numbers before queries leave your device.</p>
         </article>
       </div>
@@ -302,6 +311,33 @@
           <div class="icon-num">OPEN MODELS</div>
           <h3>Transparent AI Models</h3>
           <p>Robin clearly marks which models retain inference logs and which don't. You can choose OVHcloud, Kilo, or connect your own local Home Ollama server.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="security-note" class="rule">
+    <div class="wrap">
+      <span class="eyebrow kicker">Security Deep Dive</span>
+      <h2>Another Note on Security: What "giving access to my device" actually means.</h2>
+      <p class="lede" style="margin-bottom: 28px; max-width: 68ch;">
+        When you enable local notes, Android pops up a system dialog asking for permission to access a folder. To most people, that sounds alarming—like handing an app the keys to your entire phone. Here is what is actually happening under the hood:
+      </p>
+      <div class="grid-three">
+        <article class="card">
+          <div class="icon-num">01 / STRICT SANDBOX</div>
+          <h3>Locked to One Folder</h3>
+          <p>RobinTHood uses Android's Storage Access Framework (SAF). You choose or create <strong>one specific folder</strong> (like <code>Notes</code> or <code>Robin</code>). Android cryptographically locks Robin inside that single folder. It is physically impossible for Robin to see your photos, texts, contacts, downloads, or other apps.</p>
+        </article>
+        <article class="card">
+          <div class="icon-num">02 / PLAIN TEXT ONLY</div>
+          <h3>No Executables or Binaries</h3>
+          <p>Robin strictly reads and writes human-readable Markdown (<code>.md</code>) and text files under 1 MB. It refuses binaries, executables, and scripts. It cannot run code on your device, modify system files, or install background services.</p>
+        </article>
+        <article class="card">
+          <div class="icon-num">03 / YOU OWN THE DATA</div>
+          <h3>Zero Cloud Hostage</h3>
+          <p>Big Tech AI stores your notes in their closed database so you can never cancel. Robin writes real <code>.md</code> files on your physical device. View, edit, or delete them anytime in your phone's <strong>Files</strong> app or Obsidian, and revoke folder permissions in Android settings in one tap.</p>
         </article>
       </div>
     </div>
