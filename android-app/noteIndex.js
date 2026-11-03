@@ -75,8 +75,11 @@ export async function createSqliteAdapter(dbPath = 'robin_notes_fts.db') {
   // Fallback to node:sqlite (Node.js 22+)
   try {
     const { DatabaseSync } = await import('node:sqlite');
+    const os = await import('node:os');
+    const path = await import('node:path');
     if (DatabaseSync) {
-      const nativeDb = new DatabaseSync(dbPath === ':memory:' ? ':memory:' : `/tmp/${dbPath}`);
+      const targetPath = dbPath === ':memory:' ? ':memory:' : path.join(os.tmpdir(), dbPath);
+      const nativeDb = new DatabaseSync(targetPath);
       return {
         type: 'node:sqlite',
         async exec(sql) {
