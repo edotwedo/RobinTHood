@@ -219,6 +219,96 @@ export function assess(answers) {
   return { score, tier, ...result };
 }
 
+export function entityToPlaceholder(name) {
+  const clean = String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return `[${clean || 'SECRET'}]`;
+}
+
+export function parseVaultSecrets(content) {
+  if (!content) return {};
+  let parsed;
+  if (typeof content === 'object') {
+    parsed = content;
+  } else {
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return {};
+    }
+  }
+  const result = {};
+  if (Array.isArray(parsed)) {
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.trim()) {
+        result[item.trim()] = entityToPlaceholder(item);
+      } else if (item && typeof item === 'object') {
+        for (const [k, v] of Object.entries(item)) {
+          if (k.trim()) result[k.trim()] = String(v).startsWith('[') ? String(v) : entityToPlaceholder(v);
+        }
+      }
+    }
+  } else if (parsed && typeof parsed === 'object') {
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k.trim()) {
+        result[k.trim()] = (typeof v === 'string' && v.startsWith('[')) ? v : entityToPlaceholder(v || k);
+      }
+    }
+  }
+  return result;
+}
+
+export function parseFrontmatterEntities(text) {
+  if (!text || typeof text !== 'string') return {};
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return {};
+  const frontmatter = match[1];
+  const lines = frontmatter.split(/\r?\n/);
+  const entities = {};
+  let inSecretsBlock = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    if (/^(?:secrets|shield|vault_secrets):\s*$/i.test(trimmed)) {
+      inSecretsBlock = true;
+      continue;
+    }
+
+    if (inSecretsBlock) {
+      if (!line.startsWith(' ') && !line.startsWith('\t') && !line.startsWith('-')) {
+        inSecretsBlock = false;
+        continue;
+      }
+      const listMatch = trimmed.match(/^-\s+(.+)$/);
+      if (listMatch) {
+        const item = listMatch[1].replace(/^["']|["']$/g, '').trim();
+        const kvMatch = item.match(/^([^:]+):\s*(.+)$/);
+        if (kvMatch) {
+          const k = kvMatch[1].trim().replace(/^["']|["']$/g, '');
+          const v = kvMatch[2].trim().replace(/^["']|["']$/g, '');
+          entities[k] = v.startsWith('[') ? v : entityToPlaceholder(v);
+        } else {
+          entities[item] = entityToPlaceholder(item);
+        }
+        continue;
+      }
+
+      const kvMatch = trimmed.match(/^([^:]+):\s*(.*)$/);
+      if (kvMatch) {
+        const k = kvMatch[1].trim().replace(/^["']|["']$/g, '');
+        const v = kvMatch[2].trim().replace(/^["']|["']$/g, '');
+        if (v && v !== 'true' && v !== 'false') {
+          entities[k] = v.startsWith('[') ? v : entityToPlaceholder(v);
+        } else {
+          entities[k] = entityToPlaceholder(k);
+        }
+      }
+    }
+  }
+  return entities;
+}
+
 export const HOW_IT_WORKS = [
   'RobinTHood connects to multiple leading AI models and moves between them when one is busy, rate limited or down. We do that routing so you do not need accounts or a subscription.',
   'Free usually has strings. Providers limit how much you can use, and some free services log or learn from the messages sent to them.',

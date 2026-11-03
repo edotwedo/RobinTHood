@@ -44,6 +44,8 @@ const DEFAULT_SETTINGS = {
   ollamaModel: '',
   openRouterKey: '',
   openRouterModel: '',
+  obsidianVault: '',
+  airGapped: false,
   isPro: false,
   lang: getDeviceLocale(),
 };
@@ -233,14 +235,22 @@ function Chat() {
     const update = (patch) => setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, ...patch } : m)));
 
     try {
+      const activeSettings = settings.airGapped
+        ? { ...settings, webSearch: false, selectedModel: 'ollama' }
+        : settings;
+      const effectiveFolder = activeSettings.obsidianVault && ALL_FILES
+        ? activeSettings.obsidianVault
+        : 'Documents/RobinTHood';
+
       const result = await actAndAnswer({
         history,
-        settings,
+        settings: activeSettings,
         signal: ctrl.signal,
         ctx: {
-          web: settings.webSearch,
+          web: activeSettings.webSearch,
           allFiles: ALL_FILES,
-          lang: settings.lang || 'en',
+          defaultFolder: effectiveFolder,
+          lang: activeSettings.lang || 'en',
           getFolder: async () => {
             if (IS_IOS) return iosFolder();
             if (ALL_FILES) {

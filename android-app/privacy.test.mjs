@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assess, detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, privacyOf, SELF_CHECK, tokenizeSensitive } from './privacy.js';
+import { assess, detectSensitive, detokenizeText, entityToPlaceholder, markFor, maskSensitive, mayCollect, parseFrontmatterEntities, parseVaultSecrets, privacyOf, SELF_CHECK, tokenizeSensitive } from './privacy.js';
 
 const types = (t) => detectSensitive(t).map((f) => f.type);
 
@@ -105,3 +105,54 @@ test('self check scores into three tiers', () => {
   assert.equal(assess(all(2)).tier, 'high');
   assert.equal(assess({}).tier, 'low', 'no answers yet');
 });
+
+test('parseVaultSecrets and parseFrontmatterEntities extract shielded entities for Obsidian vaults', () => {
+  // 1. _vault_secrets.json parsing
+  const jsonDict = JSON.stringify({ 'Omega Protocol': '[OMEGA]', 'Initech Corp': '[INITECH]' });
+  assert.deepEqual(parseVaultSecrets(jsonDict), {
+    'Omega Protocol': '[OMEGA]',
+    'Initech Corp': '[INITECH]',
+  });
+
+  const jsonList = JSON.stringify(['Project Apollo', 'Top Secret Key']);
+  assert.deepEqual(parseVaultSecrets(jsonList), {
+    'Project Apollo': '[PROJECT_APOLLO]',
+    'Top Secret Key': '[TOP_SECRET_KEY]',
+  });
+
+  // Invalid JSON should return empty object gracefully
+  assert.deepEqual(parseVaultSecrets('{ invalid json'), {});
+
+  // 2. Obsidian Markdown Frontmatter parsing
+  const mdWithList = `---
+title: Project Brief
+secrets:
+  - Operation Starlight
+  - Target Alpha
+tags:
+  - internal
+---
+# Meeting Notes
+Discuss Operation Starlight with the team.
+`;
+  assert.deepEqual(parseFrontmatterEntities(mdWithList), {
+    'Operation Starlight': '[OPERATION_STARLIGHT]',
+    'Target Alpha': '[TARGET_ALPHA]',
+  });
+
+  const mdWithDict = `---
+shield:
+  Acme Corp: "[CLIENT_1]"
+  Project X: "[PRJ_X]"
+---
+Notes here.
+`;
+  assert.deepEqual(parseFrontmatterEntities(mdWithDict), {
+    'Acme Corp': '[CLIENT_1]',
+    'Project X': '[PRJ_X]',
+  });
+
+  // Markdown without frontmatter
+  assert.deepEqual(parseFrontmatterEntities('# Regular note with no frontmatter'), {});
+});
+

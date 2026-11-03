@@ -10,9 +10,9 @@
 import { buildMessages, canSee, engineOrder, labelFor, runEngine } from './engines';
 import { hasImage, mapText } from './photos';
 import { pageRead, searchWeb } from './web';
-import { createAllFilesStore, createFolderStore } from './files';
+import { createAllFilesStore, createFolderStore, loadVaultSecrets } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
-import { detectSensitive, detokenizeText, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
+import { detectSensitive, detokenizeText, maskSensitive, mayCollect, parseFrontmatterEntities, tokenizeSensitive } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
 
 export { needsConfirm, parseAction, stepLabel };
@@ -194,9 +194,15 @@ async function callModel(state, messages, onText, signal, onThinking) {
 export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) {
   const started = Date.now();
   const tokenMap = ctx.tokenMap || {};
-  const hasTokens = Object.keys(tokenMap).length > 0;
+  const customEntities = { ...(ctx.customEntities || {}) };
+  const defaultFolder = ctx.defaultFolder || (settings?.obsidianVault && ctx.allFiles ? settings.obsidianVault : 'Documents/RobinTHood');
+  const store = ctx.fileStore || (ctx.allFiles ? createAllFilesStore(defaultFolder) : createFolderStore(ctx.getFolder));
+  try {
+    const vaultSecrets = await loadVaultSecrets(store);
+    Object.assign(customEntities, vaultSecrets);
+  } catch {}
+  const hasTokens = Object.keys(tokenMap).length > 0 || Object.keys(customEntities).length > 0;
   const messages = buildMessages(history, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles, hasTokens }));
-  const store = ctx.fileStore || (ctx.allFiles ? createAllFilesStore() : createFolderStore(ctx.getFolder));
   const state = {
     settings, ctx, store, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
     webTurns: new Set(), fallbackOk: false, fallbackDeclined: false, mask: false,
@@ -261,6 +267,10 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
         result = await runAction(action, ctx, state.store);
         if (result.fileBody !== undefined) {
           if (CUT_OFF_RE.test(result.fileBody)) state.partialFiles.add(fileKey(action.arg));
+          if (typeof result.fileBody === 'string') {
+            const frontEntities = parseFrontmatterEntities(result.fileBody);
+            Object.assign(customEntities, frontEntities);
+          }
           result = { text: await shareFileText(state, action, result.fileBody) };
         }
         if (result.sources) sources.push(...result.sources);
@@ -279,7 +289,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
       ? `WRITE: ${action.arg}\n${action.body.length > 1500 ? action.body.slice(0, 1500) + '\n[...]' : action.body}`
       : `${action.kind}: ${action.arg}`;
     // Once the user chose to mask or tokenize for a * model, tool output is sanitized too.
-    const out = (s) => (state.mask ? maskSensitive(s).text : (hasTokens ? tokenizeSensitive(s, tokenMap).tokenizedText : s));
+    const out = (s) => (state.mask ? maskSensitive(s).text : (hasTokens ? tokenizeSensitive(s, tokenMap, customEntities).tokenizedText : s));
     const resultMsg = { role: 'user', content: out(`RESULT of ${echo.split('\n')[0]}\n\n${result.text}\n\n(Next: another action, or your final answer.)`) };
     if (action.kind === 'SEARCH' || action.kind === 'OPEN') state.webTurns.add(resultMsg);
     messages.push({ role: 'assistant', content: out(echo) });

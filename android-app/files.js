@@ -7,6 +7,7 @@ import {
   readAsStringAsync, readDirectoryAsync, writeAsStringAsync,
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts } from './noteIndex.js';
+import { parseVaultSecrets } from './privacy.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
 // Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
@@ -354,10 +355,10 @@ export function createFolderStore(getFolder) {
   };
 }
 
-export function createAllFilesStore() {
+export function createAllFilesStore(defaultFolder = 'Documents/RobinTHood') {
   return {
     async list(folder) {
-      return listAll(folder || 'Documents/RobinTHood');
+      return listAll(folder || defaultFolder);
     },
     async exists(path) {
       try {
@@ -387,7 +388,16 @@ export function createAllFilesStore() {
       return res;
     },
     async search(query, maxHits = 6) {
-      return searchAllFiles(query, 'Documents/RobinTHood', maxHits);
+      return searchAllFiles(query, defaultFolder, maxHits);
     },
   };
+}
+
+export async function loadVaultSecrets(store) {
+  if (!store || typeof store.read !== 'function') return {};
+  try {
+    const content = await store.read('_vault_secrets.json');
+    if (content) return parseVaultSecrets(content);
+  } catch {}
+  return {};
 }

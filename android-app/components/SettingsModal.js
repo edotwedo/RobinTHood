@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C } from '../theme';
 import { nameOf, pickFolder } from '../files';
+import { discoverOllamaLan } from '../ollamaDiscovery';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
@@ -37,6 +38,9 @@ export default function SettingsModal({
   openAdPrivacyOptions,
   handleOpenSource,
 }) {
+  const [ollamaStatus, setOllamaStatus] = useState('');
+  const [vaultStatus, setVaultStatus] = useState('');
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={[styles.overlay, { paddingTop: insetsTop + 20 }]}>
@@ -106,6 +110,50 @@ export default function SettingsModal({
               placeholder="llama3.1"
               onChange={(v) => setSettings((s) => ({ ...s, ollamaModel: v.trim() }))}
             />
+            <Pressable
+              style={[styles.pill, { alignSelf: 'flex-start', marginTop: 4, marginBottom: 8 }]}
+              onPress={async () => {
+                setOllamaStatus('Searching LAN for Ollama...');
+                const found = await discoverOllamaLan(settings.ollamaUrl ? [settings.ollamaUrl] : []);
+                if (found) {
+                  setSettings((s) => ({
+                    ...s,
+                    ollamaUrl: found.url,
+                    ollamaModel: found.recommendedModel || s.ollamaModel || 'llama3.2',
+                  }));
+                  setOllamaStatus(`✓ Found Ollama: ${found.url} (${found.recommendedModel})`);
+                } else {
+                  setOllamaStatus('✗ No Ollama instance detected on local network');
+                }
+              }}
+            >
+              <Text style={styles.optionText}>🔍 Auto-Detect Home Ollama on LAN</Text>
+            </Pressable>
+            {ollamaStatus ? <Text style={styles.hint}>{ollamaStatus}</Text> : null}
+
+            <Text style={styles.fieldLabel}>Air-Gapped Mode (100% Offline)</Text>
+            <Pressable
+              style={[styles.pill, settings.airGapped && styles.optionActive]}
+              onPress={() =>
+                setSettings((s) => {
+                  const nextAirGapped = !s.airGapped;
+                  return {
+                    ...s,
+                    airGapped: nextAirGapped,
+                    webSearch: nextAirGapped ? false : s.webSearch,
+                    selectedModel: nextAirGapped ? 'ollama' : (s.selectedModel === 'ollama' ? 'ovh-120b' : s.selectedModel),
+                  };
+                })
+              }
+            >
+              <Text style={[styles.optionText, settings.airGapped && { color: '#fff', fontWeight: '700' }]}>
+                {settings.airGapped ? '🛡️ Air-Gapped Mode: ON (Local / Ollama Only)' : '🛡️ Air-Gapped Mode: OFF'}
+              </Text>
+            </Pressable>
+            <Text style={styles.hint}>
+              Disables web search and restricts queries strictly to your local Ollama instance for 100% offline, zero-cloud querying.
+            </Text>
+
             <Field
               label="OpenRouter key (optional)"
               value={settings.openRouterKey}
@@ -151,6 +199,35 @@ export default function SettingsModal({
                 </Pressable>
               </>
             )}
+
+            <Text style={styles.fieldLabel}>Obsidian Vault Quick-Connect</Text>
+            <Pressable
+              style={[styles.pill, settings.obsidianVault && styles.optionActive]}
+              onPress={async () => {
+                try {
+                  if (allFiles) {
+                    setSettings((s) => ({ ...s, obsidianVault: 'Documents/Obsidian', filesUri: 'allfiles:Documents/Obsidian' }));
+                    setVaultStatus('✓ Connected to Documents/Obsidian');
+                  } else {
+                    const uri = await pickFolder();
+                    if (uri) {
+                      setSettings((s) => ({ ...s, obsidianVault: uri, filesUri: uri }));
+                      setVaultStatus(`✓ Connected: ${nameOf(uri) || 'Obsidian Vault'}`);
+                    }
+                  }
+                } catch {}
+              }}
+            >
+              <Text style={[styles.optionText, settings.obsidianVault && { color: '#fff', fontWeight: '700' }]}>
+                {settings.obsidianVault
+                  ? `🔮 Obsidian Vault: ${allFiles ? 'Documents/Obsidian' : (nameOf(settings.obsidianVault) || 'Connected')}`
+                  : '🔮 Quick-Connect Obsidian Vault (Documents/Obsidian)'}
+              </Text>
+            </Pressable>
+            {vaultStatus ? <Text style={styles.hint}>{vaultStatus}</Text> : null}
+            <Text style={styles.hint}>
+              Reads and writes Markdown notes in your vault. Custom secrets defined in _vault_secrets.json or note frontmatter (secrets: [...]) are shielded before leaving the phone.
+            </Text>
 
             <Text style={styles.fieldLabel}>Music volume</Text>
             <View style={styles.pillRow}>

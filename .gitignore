@@ -3,3 +3,6 @@ obj/
 publish/
 *.user
 *.suo
+
+.venv
+scripts/.venv
