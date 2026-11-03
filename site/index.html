@@ -170,6 +170,34 @@
   .cta-band .btn-primary { background: #fff; color: var(--green-deep); }
   .cta-band .btn-primary:hover { background: var(--paper); }
 
+  .dev-card {
+    display: flex;
+    gap: clamp(24px, 5vw, 44px);
+    align-items: center;
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: clamp(24px, 5vw, 44px);
+    margin: 20px 0;
+  }
+  @media(max-width: 720px) {
+    .dev-card { flex-direction: column; text-align: center; }
+    .dev-links { justify-content: center; }
+  }
+  .dev-avatar {
+    width: clamp(130px, 22vw, 175px);
+    height: clamp(130px, 22vw, 175px);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 4px solid var(--green);
+    box-shadow: 0 10px 28px rgba(45, 106, 79, 0.22);
+    flex-shrink: 0;
+  }
+  .dev-body { flex: 1; }
+  .dev-body h2 { margin: 6px 0 14px; font-size: clamp(1.4rem, 2.8vw, 1.9rem); color: var(--ink); }
+  .dev-text { color: var(--ink-soft); font-size: 1.02rem; line-height: 1.65; margin: 0 0 14px; }
+  .dev-links { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+
   footer.site { border-top: 1px solid var(--line); padding: 40px 0; color: var(--muted); font-size: 0.88rem; }
   .foot-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
   footer a { color: var(--ink-soft); text-decoration: none; }
@@ -184,6 +212,7 @@
     <nav class="links" aria-label="Sections">
       <a href="#features">Features</a>
       <a href="#privacy">Privacy</a>
+      <a href="#about">About</a>
       <a href="#faq">FAQ</a>
       <a href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">GitHub</a>
     </nav>
@@ -272,6 +301,28 @@
           <h3>Transparent AI Models</h3>
           <p>Robin clearly marks which models retain inference logs and which don't. You can choose OVHcloud, Kilo, or connect your own local Home Ollama server.</p>
         </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="about" class="rule">
+    <div class="wrap">
+      <div class="dev-card">
+        <img class="dev-avatar" src="phil.jpg" alt="Phil - Developer of RobinTHood" width="170" height="170" />
+        <div class="dev-body">
+          <span class="eyebrow kicker">Behind the Project</span>
+          <h2>A Note from the Developer</h2>
+          <p class="dev-text">
+            Hey, I'm Phil. I spent years across telecom, wireless infrastructure, and indie systems engineering. I built <strong>RobinTHood</strong> because I got tired of seeing everyday AI search and assistance gated behind $20/month subscription paywalls, forced account logins, and data harvesting.
+          </p>
+          <p class="dev-text">
+            RobinTHood is built lean: no subscription fees, no locked doors, and zero interest in hoarding your search history. Just fast web answers, real source citations, and direct edge-AI models you can inspect and trust.
+          </p>
+          <div class="dev-links">
+            <a class="btn btn-secondary" href="mailto:aroundrobin@protonmail.com">Contact Phil</a>
+            <a class="btn btn-secondary" href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">GitHub Project</a>
+          </div>
+        </div>
       </div>
     </div>
   </section>
