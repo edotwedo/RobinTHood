@@ -172,31 +172,33 @@
 
   .dev-card {
     display: flex;
-    gap: clamp(24px, 5vw, 44px);
-    align-items: center;
+    gap: clamp(28px, 5vw, 48px);
+    align-items: flex-start;
     background: var(--paper-card);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: clamp(24px, 5vw, 44px);
+    padding: clamp(28px, 5vw, 48px);
     margin: 20px 0;
   }
-  @media(max-width: 720px) {
-    .dev-card { flex-direction: column; text-align: center; }
+  @media(max-width: 768px) {
+    .dev-card { flex-direction: column; align-items: center; text-align: center; }
     .dev-links { justify-content: center; }
   }
   .dev-avatar {
-    width: clamp(130px, 22vw, 175px);
-    height: clamp(130px, 22vw, 175px);
+    width: clamp(140px, 22vw, 180px);
+    height: clamp(140px, 22vw, 180px);
     border-radius: 50%;
     object-fit: cover;
     border: 4px solid var(--green);
-    box-shadow: 0 10px 28px rgba(45, 106, 79, 0.22);
+    box-shadow: 0 10px 30px rgba(45, 106, 79, 0.22);
     flex-shrink: 0;
+    margin-top: 4px;
   }
-  .dev-body { flex: 1; }
-  .dev-body h2 { margin: 6px 0 14px; font-size: clamp(1.4rem, 2.8vw, 1.9rem); color: var(--ink); }
-  .dev-text { color: var(--ink-soft); font-size: 1.02rem; line-height: 1.65; margin: 0 0 14px; }
-  .dev-links { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+  .dev-body { flex: 1; min-width: 0; }
+  .dev-body h2 { margin: 6px 0 16px; font-size: clamp(1.4rem, 2.8vw, 2rem); color: var(--ink); }
+  .dev-text { color: var(--ink-soft); font-size: 1.04rem; line-height: 1.7; margin: 0 0 16px; }
+  .dev-text strong { color: var(--ink); font-weight: 600; }
+  .dev-links { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
 
   footer.site { border-top: 1px solid var(--line); padding: 40px 0; color: var(--muted); font-size: 0.88rem; }
   .foot-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
@@ -308,18 +310,24 @@
   <section id="about" class="rule">
     <div class="wrap">
       <div class="dev-card">
-        <img class="dev-avatar" src="phil.jpg" alt="Phil - Developer of RobinTHood" width="170" height="170" />
+        <img class="dev-avatar" src="phil.jpg" alt="Phil - Developer of RobinTHood" width="180" height="180" />
         <div class="dev-body">
           <span class="eyebrow kicker">Behind the Project</span>
           <h2>A Note from the Developer</h2>
           <p class="dev-text">
-            Hey, I'm Phil. I spent years across telecom, wireless infrastructure, and indie systems engineering. I built <strong>RobinTHood</strong> because I got tired of seeing everyday AI search and assistance gated behind $20/month subscription paywalls, forced account logins, and data harvesting.
+            Hey, I'm Phil. I'm a father, a former wireless and telecom tech, and the sole developer behind RobinTHood.
           </p>
           <p class="dev-text">
-            RobinTHood is built lean: no subscription fees, no locked doors, and zero interest in hoarding your search history. Just fast web answers, real source citations, and direct edge-AI models you can inspect and trust.
+            I built this as a counter-culture move. The big AI platforms charge you $20 a month, demand an account, and <em>still</em> vacuum up your data to train their models and build advertising profiles. Let's be completely straight about how privacy actually works: any cloud AI requires sending your prompt to an inference server. That's just physics. But here’s the difference: RobinTHood has zero interest in building a dossier on you. There are no accounts, no forced logins, no tracking cookies, and no data brokers. If you want absolute zero-exposure privacy, RobinTHood lets you plug directly into your own self-hosted Home Ollama server—which is literally the best you can do with AI today.
+          </p>
+          <p class="dev-text">
+            I believe strongly in honesty and clean intentions. In fact, you might say my God's name is Truth. If anyone asks about the capital <strong>T</strong> in RobinTHood, you can call it Truth, Logos, or a cross—it stands for building things out in the open, in plain daylight.
+          </p>
+          <p class="dev-text">
+            I don't have venture capital investors demanding infinite quarterly growth at your expense. I have a ceiling. My goal is simple: build a genuinely useful tool that gives people back their access, earn enough security to take care of my family, and then I'm good. No bait-and-switch, no creeping paywalls, and no corporate rot.
           </p>
           <div class="dev-links">
-            <a class="btn btn-secondary" href="mailto:aroundrobin@protonmail.com">Contact Phil</a>
+            <a class="btn btn-secondary" href="mailto:aroundrobin@protonmail.com">Email Phil Directly</a>
             <a class="btn btn-secondary" href="https://github.com/edotwedo/RobinTHood" target="_blank" rel="noopener">GitHub Project</a>
           </div>
         </div>
