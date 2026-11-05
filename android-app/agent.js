@@ -15,6 +15,7 @@ import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, detokenizeText, maskSensitive, mayCollect, parseFrontmatterEntities, tokenizeSensitive } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
 import { verifyAnswer } from './verify';
+import { followupInstruction, splitFollowups } from './followups';
 
 export { needsConfirm, parseAction, stepLabel };
 
@@ -65,7 +66,8 @@ export function toolPrompt({ web, allFiles, hasTokens }) {
     'When you are done, answer normally with no action lines. ' +
     'If web searches fail or return no relevant data, clearly inform the user that live web access was unavailable ' +
     'instead of guessing or inventing facts. Only state facts that the search results or pages show; never fill a gap ' +
-    'with something plausible (events, dates, times, prices, places, names or quotes). Never claim you cannot access the user\'s files.'
+    'with something plausible (events, dates, times, prices, places, names or quotes). Never claim you cannot access the user\'s files.\n' +
+    followupInstruction()
   );
 }
 
@@ -242,13 +244,17 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     usedId = id;
     onEvent({ type: 'model', model: labelFor(id, settings) });
 
-    const action = finalTurn ? null : parseAction(text);
+    const action = finalTurn ? null : parseAction(splitFollowups(text).text);
     if (!action) {
       const cleanAnswer = stripPlanning(text.trim());
       const hydratedText = hasTokens ? detokenizeText(cleanAnswer, tokenMap) : cleanAnswer;
+      const split = splitFollowups(hydratedText);
+      const answer = split.text.trim() ? split.text : hydratedText;
       return {
-        ok: true, id, model: labelFor(id, settings), text: hydratedText, steps, sources: dedupe(sources), files,
-        verify: verifyAnswer(hydratedText, evidence) || undefined,
+        ok: true, id, model: labelFor(id, settings), text: answer,
+        followups: split.text.trim() ? split.questions : [],
+        steps, sources: dedupe(sources), files,
+        verify: verifyAnswer(answer, evidence) || undefined,
         tainted: taint.web,
         seconds: (Date.now() - started) / 1000,
         fellBack: settings.selectedModel !== 'auto' && id !== settings.selectedModel,

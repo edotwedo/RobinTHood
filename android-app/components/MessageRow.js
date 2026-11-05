@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { availableModels } from '../engines';
+import { splitFollowups } from '../followups';
 import { t } from '../i18n';
 import { markFor } from '../privacy';
 import { FormattedMessage } from './MarkdownView';
@@ -29,10 +30,14 @@ export default function MessageRow({
   onOpenPrivacy,
   handleOpenSource,
   status,
+  onSuggest,
+  streaming,
 }) {
   const mine = item.role === 'user';
   const [checkOpen, setCheckOpen] = useState(false);
   const lang = settings?.lang;
+  const shown = mine ? item.content : splitFollowups(item.content).text;
+  const chips = !mine && !streaming && !item.pending && !item.error && !item.intro ? (item.followups || []) : [];
 
   return (
     <View style={[styles.msg, mine ? styles.userMsg : styles.botMsg]}>
@@ -99,7 +104,7 @@ export default function MessageRow({
           ) : item.attachment ? (
             <Text style={styles.attachChip}>📎 {item.attachment}</Text>
           ) : null}
-          <FormattedMessage text={item.attachment ? item.typed : item.content} />
+          <FormattedMessage text={item.attachment ? item.typed : shown} />
         </>
       ) : (
         <>
@@ -114,6 +119,17 @@ export default function MessageRow({
           ) : null}
         </>
       )}
+
+      {chips.length ? (
+        <View style={styles.followups}>
+          <Text style={styles.followupsLabel}>{t('followupsLabel', lang)}</Text>
+          {chips.map((q) => (
+            <Pressable key={q} style={styles.followupChip} onPress={() => onSuggest?.(q)}>
+              <Text style={styles.followupChipText}>{q}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {item.verify?.claims?.length ? (
         <View style={styles.checkContainer}>
@@ -230,4 +246,8 @@ const styles = StyleSheet.create({
   sourceDomain: { fontSize: 10, color: C.faint, flex: 1, textAlign: 'right', marginLeft: 4 },
   sourceTitle: { fontSize: 11, color: '#93c5fd', lineHeight: 15 },
   note: { color: C.faint, fontSize: 11, marginTop: 6, fontStyle: 'italic' },
+  followups: { marginTop: 10 },
+  followupsLabel: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8, marginBottom: 6 },
+  followupChip: { alignSelf: 'flex-start', backgroundColor: C.panel2, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingVertical: 6, paddingHorizontal: 10, marginBottom: 6 },
+  followupChipText: { color: C.text, fontSize: 13 },
 });
