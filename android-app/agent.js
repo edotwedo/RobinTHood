@@ -14,6 +14,7 @@ import { createAllFilesStore, createFolderStore, loadVaultSecrets } from './file
 import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, detokenizeText, maskSensitive, mayCollect, parseFrontmatterEntities, tokenizeSensitive } from './privacy';
 import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
+import { verifyAnswer } from './verify';
 
 export { needsConfirm, parseAction, stepLabel };
 
@@ -107,13 +108,15 @@ async function runAction(action, ctx, store) {
       if (!ctx.web) return { text: 'Web is switched off. Tell the user to tap the Web button if they want you to search.' };
       const { source, results } = await searchWeb(action.arg, ctx.lang);
       const lines = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n');
-      return { text: `Search results for "${action.arg}" (${source}):\n\n${wrapWeb(lines)}`, sources: results.map((r) => ({ title: r.title, url: r.url })) };
+      return { text: `Search results for "${action.arg}" (${source}):\n\n${wrapWeb(lines)}`, sources: results.map((r) => ({ title: r.title, url: r.url })),
+        evidence: results.map((r) => ({ url: r.url, text: `${r.title}\n${r.snippet}` })) };
     }
     case 'OPEN': {
       if (!ctx.web) return { text: 'Web is switched off. Tell the user to tap the Web button if they want you to read pages.' };
       const { text, reason } = await pageRead(action.arg, 6000);
       if (!text) return { text: `Could not read ${action.arg}: ${READ_PROBLEMS[reason] || READ_PROBLEMS.unreadable}` };
-      return { text: `Text of ${action.arg}:\n\n${wrapWeb(text)}`, sources: [{ title: host(action.arg), url: action.arg, opened: true }] };
+      return { text: `Text of ${action.arg}:\n\n${wrapWeb(text)}`, sources: [{ title: host(action.arg), url: action.arg, opened: true }],
+        evidence: [{ url: action.arg, text }] };
     }
     case 'SEARCH_FILES': {
       const hits = await store.search(action.arg);
@@ -217,6 +220,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
   };
   const steps = [];
   const sources = [];
+  const evidence = []; // what the web results actually said, for the verifiability labels
   const files = [];
   let usedId = state.order[0];
   // An earlier reply built on web pages or files is in the history the model sees, so
@@ -244,6 +248,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
       const hydratedText = hasTokens ? detokenizeText(cleanAnswer, tokenMap) : cleanAnswer;
       return {
         ok: true, id, model: labelFor(id, settings), text: hydratedText, steps, sources: dedupe(sources), files,
+        verify: verifyAnswer(hydratedText, evidence) || undefined,
         tainted: taint.web,
         seconds: (Date.now() - started) / 1000,
         fellBack: settings.selectedModel !== 'auto' && id !== settings.selectedModel,
@@ -282,6 +287,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
           result = { text: await shareFileText(state, action, result.fileBody) };
         }
         if (result.sources) sources.push(...result.sources);
+        if (result.evidence) evidence.push(...result.evidence);
         if (result.file) files.push(result.file);
         if (action.kind === 'SEARCH' || action.kind === 'OPEN' || action.kind === 'READ' || action.kind === 'LIST' || action.kind === 'SEARCH_FILES') {
           taint.web = true;
