@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { availableModels } from '../engines';
+import { t } from '../i18n';
 import { markFor } from '../privacy';
 import { FormattedMessage } from './MarkdownView';
 import { C } from '../theme';
@@ -83,7 +84,7 @@ export default function MessageRow({
 
       {item.intro ? (
         <Pressable style={styles.linkBtn} onPress={onOpenPrivacy}>
-          <Text style={styles.linkBtnText}>How Robin is free, and your data ›</Text>
+          <Text style={styles.linkBtnText}>{t('privacyLink', settings.lang)}</Text>
         </Pressable>
       ) : null}
 
