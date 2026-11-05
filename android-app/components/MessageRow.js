@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { availableModels } from '../engines';
+import { t } from '../i18n';
 import { markFor } from '../privacy';
 import { FormattedMessage } from './MarkdownView';
 import { C } from '../theme';
@@ -30,6 +31,8 @@ export default function MessageRow({
   status,
 }) {
   const mine = item.role === 'user';
+  const [checkOpen, setCheckOpen] = useState(false);
+  const lang = settings?.lang;
 
   return (
     <View style={[styles.msg, mine ? styles.userMsg : styles.botMsg]}>
@@ -112,6 +115,36 @@ export default function MessageRow({
         </>
       )}
 
+      {item.verify?.claims?.length ? (
+        <View style={styles.checkContainer}>
+          <Pressable onPress={() => setCheckOpen((v) => !v)} hitSlop={6}>
+            <Text style={styles.checkHeader}>
+              {t('checkHeader', lang)}{'  '}
+              <Text style={styles.checkOk}>✓ {item.verify.counts.supported}</Text>{'  '}
+              <Text style={styles.checkPartial}>~ {item.verify.counts.partial}</Text>{'  '}
+              <Text style={styles.checkMissing}>✗ {item.verify.counts.unsupported}</Text>
+              {'  '}{checkOpen ? '▾' : '▸'}
+            </Text>
+          </Pressable>
+          {checkOpen ? (
+            <>
+              <Text style={styles.checkHint}>{t('checkHint', lang)}</Text>
+              {item.verify.claims.map((c, i) => (
+                <Pressable key={i} disabled={!c.url} onPress={() => c.url && handleOpenSource(c.url)} style={styles.checkRow}>
+                  <Text style={[styles.checkMark, c.level === 'supported' ? styles.checkOk : c.level === 'partial' ? styles.checkPartial : styles.checkMissing]}>
+                    {c.level === 'supported' ? '✓' : c.level === 'partial' ? '~' : '✗'}
+                  </Text>
+                  <Text style={styles.checkText}>
+                    {c.text}
+                    {c.missing?.length ? <Text style={styles.checkMissing}>{'  '}({t('checkNotInSource', lang)}: {c.missing.join(', ')})</Text> : null}
+                  </Text>
+                </Pressable>
+              ))}
+            </>
+          ) : null}
+        </View>
+      ) : null}
+
       {item.sources?.length ? (
         <View style={styles.sourcesContainer}>
           <Text style={styles.sourcesHeader}>SOURCES</Text>
@@ -177,6 +210,15 @@ const styles = StyleSheet.create({
   loadingText: { color: C.dim, fontSize: 12, marginLeft: 8 },
   thinkingBox: { marginTop: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: C.border },
   thinkingText: { color: C.faint, fontSize: 12, lineHeight: 17, fontStyle: 'italic' },
+  checkContainer: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
+  checkHeader: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8 },
+  checkHint: { fontSize: 11, color: C.faint, marginTop: 6, marginBottom: 4 },
+  checkRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+  checkMark: { fontSize: 13, fontWeight: '700', width: 14 },
+  checkText: { flex: 1, fontSize: 12, color: C.dim, lineHeight: 17 },
+  checkOk: { color: C.green },
+  checkPartial: { color: C.dim },
+  checkMissing: { color: C.red },
   sourcesContainer: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 8 },
   sourcesHeader: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8, marginBottom: 6 },
   sourcesScroll: { marginTop: 2 },

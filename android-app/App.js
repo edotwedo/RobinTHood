@@ -326,6 +326,7 @@ function Chat() {
           model: result.model,
           seconds: result.seconds,
           sources: result.sources,
+          verify: result.verify,
           steps: result.steps,
           tainted: result.tainted || undefined,
           note: result.forPhoto ? `${labelFor(settings.selectedModel, settings)} can't see photos, so ${result.model} answered`
