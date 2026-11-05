@@ -2,6 +2,7 @@
 // build: a separate app (own name and package, installs next to the Play version)
 // that can ask for Android's "All files access" so Robin can use the whole phone.
 const { withProjectBuildGradle, withAndroidManifest } = require('@expo/config-plugins');
+const { resolveAds } = require('./adsConfig');
 
 const withSecurityHardening = (cfg) => {
   return withAndroidManifest(cfg, (modConfig) => {
@@ -34,20 +35,10 @@ module.exports = ({ config }) => {
   const personal = process.env.ROBIN_ALL_FILES === '1';
   // Search worker signing key, from CI secrets. Without it the app skips the worker.
   const robinSecret = process.env.ROBIN_CLIENT_SECRET || '';
-  // Real AdMob IDs, injected at build time (CI secrets) so no test IDs reach a release.
-  // The app IDs live on the plugin; the banner unit IDs reach the app through extra.
-  const admob = {
-    androidApp: process.env.ROBIN_ADMOB_ANDROID_APP || '',
-    iosApp: process.env.ROBIN_ADMOB_IOS_APP || '',
-    androidBanner: process.env.ROBIN_ADMOB_ANDROID_BANNER || '',
-    iosBanner: process.env.ROBIN_ADMOB_IOS_BANNER || '',
-  };
-  const plugins = (config.plugins || []).map((entry) => {
-    const [name, opts = {}] = Array.isArray(entry) ? entry : [entry];
-    if (name !== 'react-native-google-mobile-ads') return entry;
-    return [name, { ...opts, androidAppId: admob.androidApp || opts.androidAppId, iosAppId: admob.iosApp || opts.iosAppId }];
-  });
-  const ads = { adMobBannerAndroid: admob.androidBanner, adMobBannerIos: admob.iosBanner };
+  // Every AdMob ID comes from one place, adsConfig.js: real IDs from the build environment,
+  // Google's published test IDs otherwise.
+  const adIds = resolveAds(process.env);
+  const ads = { adMobBannerAndroid: adIds.androidBanner, adMobBannerIos: adIds.iosBanner };
 
   // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
   // blocks in release builds unless cleartext is allowed. Every other address the app
@@ -55,7 +46,8 @@ module.exports = ({ config }) => {
   const baseConfig = withSecurityHardening(withAdMobCompatibility({
     ...config,
     plugins: [
-      ...plugins,
+      ...(config.plugins || []),
+      ['react-native-google-mobile-ads', { androidAppId: adIds.androidApp, iosAppId: adIds.iosApp }],
       [
         'expo-build-properties',
         {

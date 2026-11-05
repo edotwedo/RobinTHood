@@ -22,6 +22,9 @@ jobs:
     env:
       # Search worker signing key; app.config.js bakes it into extra.robinSecret.
       ROBIN_CLIENT_SECRET: ${{ secrets.ROBIN_CLIENT_SECRET }}
+      # Real AdMob IDs, read by adsConfig.js; empty keeps Google's test IDs.
+      ROBIN_ADMOB_ANDROID_APP: ${{ secrets.ROBIN_ADMOB_ANDROID_APP }}
+      ROBIN_ADMOB_ANDROID_BANNER: ${{ secrets.ROBIN_ADMOB_ANDROID_BANNER }}
     defaults:
       run:
         working-directory: android-app
