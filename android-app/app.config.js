@@ -3,6 +3,7 @@
 // that can ask for Android's "All files access" so Robin can use the whole phone.
 const { withProjectBuildGradle, withAndroidManifest } = require('@expo/config-plugins');
 const { resolveAds } = require('./adsConfig');
+const { resolveIosBuildNumber } = require('./iosBuild');
 
 const withSecurityHardening = (cfg) => {
   return withAndroidManifest(cfg, (modConfig) => {
@@ -39,12 +40,16 @@ module.exports = ({ config }) => {
   // Google's published test IDs otherwise.
   const adIds = resolveAds(process.env);
   const ads = { adMobBannerAndroid: adIds.androidBanner, adMobBannerIos: adIds.iosBanner };
+  // app.json's buildNumber is a stale "6". CI passes the GitHub run number so prebuild
+  // does not bake 6 into CFBundleVersion. A blank value keeps the app.json number.
+  const iosBuildNumber = resolveIosBuildNumber(config.ios?.buildNumber, process.env.ROBIN_IOS_BUILD_NUMBER);
 
   // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
   // blocks in release builds unless cleartext is allowed. Every other address the app
   // uses is https.
   const baseConfig = withSecurityHardening(withAdMobCompatibility({
     ...config,
+    ios: { ...config.ios, buildNumber: iosBuildNumber },
     plugins: [
       ...(config.plugins || []),
       ['react-native-google-mobile-ads', { androidAppId: adIds.androidApp, iosAppId: adIds.iosApp }],

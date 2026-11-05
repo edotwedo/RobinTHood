@@ -300,6 +300,9 @@ jobs:
       # the AdMob account exists; AdBanner falls back to Google's test banner.
       ROBIN_ADMOB_IOS_APP: ${{ secrets.ROBIN_ADMOB_IOS_APP }}
       ROBIN_ADMOB_IOS_BANNER: ${{ secrets.ROBIN_ADMOB_IOS_BANNER }}
+      # app.json's buildNumber is a stale 6. Prebuild and the stamp step both use this,
+      # because a literal CFBundleVersion of 6 is what TestFlight reads.
+      ROBIN_IOS_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -321,6 +324,11 @@ jobs:
 
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --no-install
+
+      # prebuild writes app.json's "6" into the plist as a literal. xcodebuild's
+      # CURRENT_PROJECT_VERSION does not replace that literal, so stamp it here.
+      - name: Stamp iOS build number
+        run: node iosBuild.js
 
       - name: Install CocoaPods
         working-directory: android-app/ios
