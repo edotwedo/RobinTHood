@@ -86,7 +86,7 @@ export default function MessageRow({
 
       {item.intro ? (
         <Pressable style={styles.linkBtn} onPress={onOpenPrivacy}>
-          <Text style={styles.linkBtnText}>How Robin is free, and your data ›</Text>
+          <Text style={styles.linkBtnText}>{t('privacyLink', settings.lang)}</Text>
         </Pressable>
       ) : null}
 
