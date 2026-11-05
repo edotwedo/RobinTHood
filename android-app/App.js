@@ -323,6 +323,7 @@ function Chat() {
       if (result.ok) {
         update({
           content: result.text,
+          followups: result.followups,
           model: result.model,
           seconds: result.seconds,
           sources: result.sources,
@@ -454,6 +455,8 @@ function Chat() {
               onOpenPrivacy={() => setPrivacyOpen(true)}
               handleOpenSource={handleOpenSource}
               status={status}
+              streaming={busy}
+              onSuggest={(q) => setInput(q)}
             />
           )}
           contentContainerStyle={[styles.chatContent, { paddingBottom: 16 }]}
