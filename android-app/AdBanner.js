@@ -3,8 +3,8 @@ import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-nati
 import Constants from 'expo-constants';
 import mobileAds, { AdsConsent, BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
-// Real unit IDs come from app.config.js (ROBIN_ADMOB_* environment at build time). Until
-// they are set, a dev build or a release falls back to Google's test banner, so a request
+// The banner unit ID comes from adsConfig.js, passed through app.config.js `extra`. Until a
+// real one is set, a dev build or a release falls back to Google's test banner, so a request
 // always fills and no sample ID is mistaken for a live one.
 const configuredUnit = (Constants.expoConfig?.extra || {})[Platform.OS === 'ios' ? 'adMobBannerIos' : 'adMobBannerAndroid'];
 const AD_UNIT_ID = __DEV__ || !configuredUnit ? TestIds.ADAPTIVE_BANNER : configuredUnit;
