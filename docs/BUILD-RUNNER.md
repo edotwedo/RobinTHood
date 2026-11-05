@@ -3,16 +3,16 @@
 Dedicated local build node and GitHub Actions self-hosted runner for RobinTHood.
 
 ## Node Specifications
-- **Local IP:** `192.168.1.171`
+- **Local IP:** `192.168.1.203` (DHCP, formerly `.171`)
 - **User:** `disci`
 - **OS:** Windows 11 Home (AMD64)
-- **Drive D:** 916+ GB free
-- **Runner Path:** `D:\actions-runner`
+- **Drive C (NVMe SSD):** `SK hynix BC711` (105+ GB free) — Dedicated build workspace (`C:\actions-runner\_work`)
+- **Drive D (SATA HDD):** `WDC WD10EZEX` (916+ GB free) — Runner binary installation (`D:\actions-runner`)
 
 ## Access
 Passwordless SSH key authentication is configured:
 ```bash
-ssh -o BatchMode=yes disci@192.168.1.171
+ssh -o BatchMode=yes disci@192.168.1.203
 ```
 
 Send PowerShell commands non-interactively via stdin:
