@@ -58,7 +58,15 @@ def deploy_bundle(service, aab_path, track_name="track001"):
         ).execute()
         print(f"✓ Track updated for '{track_name}': {track_resp.get('track')}")
 
-        commit_resp = service.edits().commit(packageName=PACKAGE, editId=edit_id).execute()
+        try:
+            commit_resp = service.edits().commit(packageName=PACKAGE, editId=edit_id).execute()
+        except Exception as ce:
+            print(f"! Standard commit returned error ({ce}), attempting commit with changesNotSentForReview=True...")
+            commit_resp = service.edits().commit(
+                packageName=PACKAGE,
+                editId=edit_id,
+                changesNotSentForReview=True
+            ).execute()
         print(f"✓ Edit committed successfully! Edit ID: {commit_resp.get('id')}")
         print(f"★ Successfully deployed version {version_code} to track '{track_name}'!")
         return version_code
