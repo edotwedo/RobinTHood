@@ -1,7 +1,17 @@
 // app.json is the Play Store app. ROBIN_ALL_FILES=1 turns it into Phil's personal
 // build: a separate app (own name and package, installs next to the Play version)
 // that can ask for Android's "All files access" so Robin can use the whole phone.
-const { withProjectBuildGradle } = require('@expo/config-plugins');
+const { withProjectBuildGradle, withAndroidManifest } = require('@expo/config-plugins');
+
+const withSecurityHardening = (cfg) => {
+  return withAndroidManifest(cfg, (modConfig) => {
+    const mainApp = modConfig.modResults.manifest.application?.[0];
+    if (mainApp) {
+      mainApp.$['android:allowBackup'] = 'false';
+    }
+    return modConfig;
+  });
+};
 
 const withAdMobCompatibility = (cfg) => {
   return withProjectBuildGradle(cfg, (modConfig) => {
@@ -42,10 +52,30 @@ module.exports = ({ config }) => {
   // Home Ollama is usually plain http:// over Tailscale or the home network, which Android
   // blocks in release builds unless cleartext is allowed. Every other address the app
   // uses is https.
-  const baseConfig = withAdMobCompatibility({
+  const baseConfig = withSecurityHardening(withAdMobCompatibility({
     ...config,
-    plugins: [...plugins, ['expo-build-properties', { android: { usesCleartextTraffic: true } }]],
-  });
+    plugins: [
+      ...plugins,
+      [
+        'expo-build-properties',
+        {
+          android: {
+            usesCleartextTraffic: true,
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            extraProguardRules: `
+-keep class com.swmansion.reanimated.** { *; }
+-keep class com.facebook.react.turbomodule.** { *; }
+-keep class com.google.android.gms.ads.** { *; }
+-keep interface com.google.android.gms.ads.** { *; }
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-keep class expo.modules.** { *; }
+            `.trim(),
+          },
+        },
+      ],
+    ],
+  }));
 
   if (!personal) {
     return {
