@@ -87,6 +87,14 @@ export function maskSensitive(text) {
   return { text: out + src.slice(last), count: found.length, found };
 }
 
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function freshEntity(tokenMap) {
+  let i = 1;
+  while (tokenMap[`[ENTITY_${i}]`] !== undefined) i++;
+  return `[ENTITY_${i}]`;
+}
+
 /**
  * Bi-directional PII Tokenization for privacy-first cloud querying.
  * Replaces real sensitive values with semantic placeholder variables ([EMAIL_1], [SECRET_1])
@@ -100,18 +108,25 @@ export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
     reverseMap[v] = k;
   }
 
-  // 1. Process custom user-defined vault entities (e.g. project codenames, client names)
+  // 1. Process custom user-defined vault entities (e.g. project codenames, client names).
+  // Every placeholder must stand for exactly one value: two names given the same
+  // placeholder (or a placeholder already used for another value earlier in the chat)
+  // would come back as the same name. And all names are replaced in one pass, so a short
+  // name can't match inside a placeholder written for a longer one.
   if (customEntities && typeof customEntities === 'object') {
-    const sortedEntities = Object.entries(customEntities)
-      .filter(([k, v]) => k && v && typeof k === 'string')
+    const present = Object.entries(customEntities)
+      .filter(([k, v]) => k && v && typeof k === 'string' && src.includes(k))
       .sort((a, b) => b[0].length - a[0].length);
 
-    for (const [entityName, placeholder] of sortedEntities) {
-      if (src.includes(entityName)) {
-        src = src.split(entityName).join(placeholder);
-        tokenMap[placeholder] = entityName;
-        reverseMap[entityName] = placeholder;
-      }
+    for (const [entityName, wanted] of present) {
+      let placeholder = reverseMap[entityName] || wanted;
+      if (tokenMap[placeholder] !== undefined && tokenMap[placeholder] !== entityName) placeholder = freshEntity(tokenMap);
+      tokenMap[placeholder] = entityName;
+      reverseMap[entityName] = placeholder;
+    }
+    if (present.length) {
+      const names = new RegExp(present.map(([k]) => escapeRe(k)).join('|'), 'g');
+      src = src.replace(names, (name) => reverseMap[name]);
     }
   }
 
@@ -166,17 +181,12 @@ export function tokenizeSensitive(text, existingMap = {}, customEntities = {}) {
  */
 export function detokenizeText(text, tokenMap = {}) {
   if (!text || !tokenMap || typeof tokenMap !== 'object') return text || '';
-  let out = String(text);
-  const sortedPlaceholders = Object.keys(tokenMap)
-    .filter(Boolean)
+  const placeholders = Object.keys(tokenMap)
+    .filter((k) => k && tokenMap[k] !== undefined)
     .sort((a, b) => b.length - a.length);
-
-  for (const placeholder of sortedPlaceholders) {
-    const original = tokenMap[placeholder];
-    if (original !== undefined) {
-      out = out.split(placeholder).join(original);
-    }
-  }
+  if (!placeholders.length) return String(text);
+  // One pass: a restored value that itself looks like a placeholder is left alone.
+  const out = String(text).replace(new RegExp(placeholders.map(escapeRe).join('|'), 'g'), (ph) => tokenMap[ph]);
   return out;
 }
 
