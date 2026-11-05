@@ -114,8 +114,8 @@ Vos notes et votre historique restent stockés sur votre téléphone. Lors d'une
 **App Title (26 / 30 chars):**  
 `RobinTHood: Gratis KI Chat`
 
-**Short Description (79 / 80 chars):**  
-`Kostenlose KI mit Websuche & Notizen. Kein Konto, kein Abo, voller Datenschutz.`
+**Short Description (69 / 80 chars):**  
+`Kostenlose KI mit Websuche & Notizen. Ohne Konto und ohne Abonnement.`
 
 **Full Description:**  
 ```text
@@ -310,7 +310,7 @@ These data types are processed on-device or transmitted to inference and infrast
 | Data Type | Collected | Linked to User | Used for Tracking | Purpose | Details |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **User Content $\\rightarrow$ Other User Content** | Yes | No | No | App Functionality | Chat prompts sent to the user's selected AI inference provider (e.g. OVHcloud, Kilo, Ollama, OpenRouter) to generate replies. The developer does not store prompts, but external third-party providers (such as free models on Kilo or OpenRouter) may log prompts per their respective terms. |
-| **User Content $\\rightarrow$ Photos or Videos** | Yes | No | No | App Functionality | Only photos explicitly attached by the user for vision analysis. Transmitted ephemerally to the vision inference provider. |
+| **User Content $\\rightarrow$ Photos or Videos** | Yes | No | No | App Functionality | Only photos explicitly attached by the user for vision analysis and transmitted to the selected vision provider (e.g. Kilo Auto). The developer does not store photos, but third-party vision providers may log inputs per their terms. |
 | **User Content $\\rightarrow$ Customer Support** | Yes | No | No | App Functionality | Feedback or problem reports submitted explicitly by the user via the in-app "Report" button (includes message snippet and optional user note). |
 | **Diagnostics $\\rightarrow$ Crash Data & Performance** | Yes | No | No | Analytics & Advertising | Collected anonymously by Google Mobile Ads SDK for ad delivery diagnostics, performance monitoring, and crash metrics. |
-| **Identifiers $\\rightarrow$ Device ID** | Yes | No | No | Third-Party Advertising | Ephemeral instance IDs used by Google Mobile Ads SDK strictly for non-personalized ad delivery and fraud prevention. No cross-app tracking; no ATT tracking prompt requested. |
+| **Identifiers $\\rightarrow$ Device ID** | Yes | No | No | Third-Party Advertising | Instance IDs used by Google Mobile Ads SDK strictly for non-personalized ad delivery and fraud prevention. No cross-app tracking; no ATT tracking prompt requested. |
