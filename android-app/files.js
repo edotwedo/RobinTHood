@@ -64,7 +64,7 @@ export async function pickAttachment(maxChars = 12000) {
   return { kind: 'text', name, text: text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text };
 }
 
-import { cleanName } from './actions';
+import { appendVia, cleanName, prepareAppendContent, truncateFileContent } from './actions';
 export { cleanName };
 
 // The display name of a SAF document URI.
@@ -101,7 +101,7 @@ export async function readFile(dirUri, name, maxChars = 12000) {
   const info = await getInfoAsync(hit.uri).catch(() => ({}));
   checkReadable(hit.name, info.size || 0);
   const text = await readAsStringAsync(hit.uri);
-  return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
+  return truncateFileContent(text, maxChars);
 }
 
 // True when a WRITE of this name would replace a file in the folder.
@@ -125,15 +125,15 @@ export async function writeFile(dirUri, name, content) {
 
 export async function appendFile(dirUri, name, content) {
   const fileName = cleanName(name);
-  const exists = await fileExists(dirUri, fileName);
-  let finalContent = content;
-  if (exists) {
-    const existing = await readFile(dirUri, fileName);
-    const sep = existing.endsWith('\n') ? '' : '\n';
-    finalContent = existing + sep + content;
-  }
-  const saved = await writeFile(dirUri, fileName, finalContent);
-  return { ...saved, appended: exists };
+  return appendVia(
+    {
+      exists: (n) => fileExists(dirUri, n),
+      read: (n, max) => readFile(dirUri, n, max),
+      write: (n, text) => writeFile(dirUri, n, text),
+    },
+    fileName,
+    content
+  );
 }
 
 export async function searchLocalFiles(dirUri, query, maxHits = 6) {
@@ -228,7 +228,7 @@ export async function readAll(path, maxChars = 12000) {
   const full = resolvePath(path);
   checkReadable(full, (await fs().stat(full)).size);
   const text = await fs().readFile(full, 'utf8');
-  return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
+  return truncateFileContent(text, maxChars);
 }
 
 // Where WRITE puts a path: .md added when there is no extension, bare names in Documents/RobinTHood.
@@ -253,17 +253,20 @@ export async function writeAll(path, content) {
 
 export async function appendAll(path, content) {
   const full = writePath(path);
-  let finalContent = content;
-  const exists = await fs().exists(full);
-  if (exists) {
-    const existing = await fs().readFile(full, 'utf8');
-    const sep = existing.endsWith('\n') ? '' : '\n';
-    finalContent = existing + sep + content;
-  } else {
-    await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
-  }
-  await fs().writeFile(full, finalContent, 'utf8');
-  return { name: full.slice(rootPath().length + 1), chars: finalContent.length, appended: exists };
+  return appendVia(
+    {
+      exists: () => fs().exists(full),
+      read: () => fs().readFile(full, 'utf8'),
+      write: async (_n, body) => {
+        const had = await fs().exists(full);
+        if (!had) await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
+        await fs().writeFile(full, body, 'utf8');
+        return { name: full.slice(rootPath().length + 1), chars: body.length };
+      },
+    },
+    full,
+    content
+  );
 }
 
 export async function searchAllFiles(query, folder = 'Documents/RobinTHood', maxHits = 6) {
@@ -341,7 +344,7 @@ export function createFolderStore(getFolder) {
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readFile(dir, path);
+            const full = await readFile(dir, path, Infinity);
             await indexNote(db, cleanName(path), full);
           } catch {}
         }
@@ -391,7 +394,7 @@ export function createAllFilesStore(defaultFolder = 'Documents/RobinTHood') {
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readAll(resolved);
+            const full = await readAll(resolved, Infinity);
             await indexNote(db, cleanName(resolved), full);
           } catch {}
         }

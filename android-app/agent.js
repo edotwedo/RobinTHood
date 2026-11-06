@@ -13,7 +13,7 @@ import { pageRead, searchWeb } from './web';
 import { createAllFilesStore, createFolderStore, loadVaultSecrets } from './files';
 import { fallbackNeedsConsent, userTextOf } from './cascade';
 import { detectSensitive, detokenizeText, maskSensitive, mayCollect, parseFrontmatterEntities, tokenizeSensitive } from './privacy';
-import { CUT_OFF_RE, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
+import { CUT_OFF_RE, checkFileAction, fileKey, initialTaint, looksLikeAction, needsConfirm, parseAction, stepLabel, host, stripPlanning, wrapFile, wrapWeb } from './actions';
 import { verifyAnswer } from './verify';
 import { followupInstruction, splitFollowups } from './followups';
 
@@ -268,10 +268,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     onEvent({ type: 'step', label, steps: [...steps] });
     let result;
     try {
-      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && (state.partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
-        throw new Error(`${action.arg} is longer than Robin can read at once, so it saw only the start. Writing it would `
-          + 'delete the rest. Do not overwrite it; save the change to a new file and tell the user');
-      }
+      checkFileAction(action, { partialFiles: state.partialFiles });
       // No confirm handler means no tap is possible: refuse rather than run unchecked.
       if ((action.kind === 'WRITE' || action.kind === 'APPEND') && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, state.store);
       const allowed = !needsConfirm(action, taint) || (ctx.confirm ? await ctx.confirm(action) : false);
