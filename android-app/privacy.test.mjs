@@ -202,3 +202,32 @@ test('tokenizeSensitive and detokenizeText handle substrings and length descendi
   assert.equal(detokenizeText(tokenizedResponse, placeholderMap), 'Result: Longer Ten and Short.');
 });
 
+
+test('two names given the same placeholder both come back (QA P1: "Alice met Bob" became "Bob met Bob")', () => {
+  const map = {};
+  const { tokenizedText } = tokenizeSensitive('Alice met Bob', map, { Alice: '[PERSON]', Bob: '[PERSON]' });
+  assert.notEqual(tokenizedText.split(' ')[0], tokenizedText.split(' ')[2], 'each name gets its own placeholder');
+  assert.ok(!tokenizedText.includes('Alice') && !tokenizedText.includes('Bob'));
+  assert.equal(detokenizeText(tokenizedText, map), 'Alice met Bob');
+});
+
+test('a placeholder used earlier in the chat is not reassigned to a new name', () => {
+  const map = {};
+  const first = tokenizeSensitive('Ask Alice', map, { Alice: '[ENTITY_1]' }).tokenizedText;
+  const second = tokenizeSensitive('Ask Bob', map, { Bob: '[ENTITY_1]' }).tokenizedText;
+  assert.equal(detokenizeText(`${first}. ${second}.`, map), 'Ask Alice. Ask Bob.');
+  // and the same name keeps the same placeholder on the next message
+  assert.equal(tokenizeSensitive('Bob again', map, { Bob: '[ENTITY_1]' }).tokenizedText, `${second.split(' ')[1]} again`);
+});
+
+test('a short name never matches inside a placeholder written for a longer one', () => {
+  const map = {};
+  const { tokenizedText } = tokenizeSensitive('Bob and NT', map, { Bob: '[ENTITY_1]', NT: '[ENTITY_2]' });
+  assert.equal(tokenizedText, '[ENTITY_1] and [ENTITY_2]');
+  assert.equal(detokenizeText(tokenizedText, map), 'Bob and NT');
+});
+
+test('detokenize is one pass: a restored value that looks like a placeholder stays as written', () => {
+  assert.equal(detokenizeText('[ENTITY_1] and [ENTITY_2]', { '[ENTITY_1]': 'see [ENTITY_2]', '[ENTITY_2]': 'Bob' }), 'see [ENTITY_2] and Bob');
+  assert.equal(detokenizeText('pay [SECRET_1]', { '[SECRET_1]': 'a$&b$1' }), 'pay a$&b$1', 'replacement text is literal');
+});
