@@ -64,7 +64,7 @@ export async function pickAttachment(maxChars = 12000) {
   return { kind: 'text', name, text: text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text };
 }
 
-import { cleanName } from './actions';
+import { cleanName, prepareAppendContent, truncateFileContent } from './actions';
 export { cleanName };
 
 // The display name of a SAF document URI.
@@ -101,7 +101,7 @@ export async function readFile(dirUri, name, maxChars = 12000) {
   const info = await getInfoAsync(hit.uri).catch(() => ({}));
   checkReadable(hit.name, info.size || 0);
   const text = await readAsStringAsync(hit.uri);
-  return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
+  return truncateFileContent(text, maxChars);
 }
 
 // True when a WRITE of this name would replace a file in the folder.
@@ -128,9 +128,8 @@ export async function appendFile(dirUri, name, content) {
   const exists = await fileExists(dirUri, fileName);
   let finalContent = content;
   if (exists) {
-    const existing = await readFile(dirUri, fileName);
-    const sep = existing.endsWith('\n') ? '' : '\n';
-    finalContent = existing + sep + content;
+    const existing = await readFile(dirUri, fileName, Infinity);
+    finalContent = prepareAppendContent(existing, content);
   }
   const saved = await writeFile(dirUri, fileName, finalContent);
   return { ...saved, appended: exists };
@@ -228,7 +227,7 @@ export async function readAll(path, maxChars = 12000) {
   const full = resolvePath(path);
   checkReadable(full, (await fs().stat(full)).size);
   const text = await fs().readFile(full, 'utf8');
-  return text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text;
+  return truncateFileContent(text, maxChars);
 }
 
 // Where WRITE puts a path: .md added when there is no extension, bare names in Documents/RobinTHood.
@@ -257,13 +256,12 @@ export async function appendAll(path, content) {
   const exists = await fs().exists(full);
   if (exists) {
     const existing = await fs().readFile(full, 'utf8');
-    const sep = existing.endsWith('\n') ? '' : '\n';
-    finalContent = existing + sep + content;
+    finalContent = prepareAppendContent(existing, content);
   } else {
     await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
   }
   await fs().writeFile(full, finalContent, 'utf8');
-  return { name: full.slice(rootPath().length + 1), chars: finalContent.length, appended: exists };
+  return { name: full.slice(rootPath().length + 1), chars: finalContent.length, replaced: exists, appended: exists };
 }
 
 export async function searchAllFiles(query, folder = 'Documents/RobinTHood', maxHits = 6) {
@@ -341,7 +339,7 @@ export function createFolderStore(getFolder) {
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readFile(dir, path);
+            const full = await readFile(dir, path, Infinity);
             await indexNote(db, cleanName(path), full);
           } catch {}
         }
@@ -391,7 +389,7 @@ export function createAllFilesStore(defaultFolder = 'Documents/RobinTHood') {
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readAll(resolved);
+            const full = await readAll(resolved, Infinity);
             await indexNote(db, cleanName(resolved), full);
           } catch {}
         }

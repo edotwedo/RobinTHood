@@ -268,9 +268,12 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     onEvent({ type: 'step', label, steps: [...steps] });
     let result;
     try {
-      if ((action.kind === 'WRITE' || action.kind === 'APPEND') && (state.partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
+      if (action.kind === 'WRITE' && (state.partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
         throw new Error(`${action.arg} is longer than Robin can read at once, so it saw only the start. Writing it would `
           + 'delete the rest. Do not overwrite it; save the change to a new file and tell the user');
+      }
+      if (action.kind === 'APPEND' && CUT_OFF_RE.test(action.body)) {
+        throw new Error(`${action.arg} append rejected: content contains cut off marker. Do not append truncated text.`);
       }
       // No confirm handler means no tap is possible: refuse rather than run unchecked.
       if ((action.kind === 'WRITE' || action.kind === 'APPEND') && needsConfirm(action, taint)) action.exists = await writeTargetExists(action, state.store);

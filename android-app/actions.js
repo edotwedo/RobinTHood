@@ -108,6 +108,23 @@ export function initialTaint(history) {
 // it, or that targets a file Robin only saw part of, would replace the whole file with
 // the part Robin saw.
 export const CUT_OFF_RE = /\[cut off: file is \d+ characters\]/;
+
+// Truncates text when reading a file if maxChars is a finite limit (e.g. 12000 for model READ),
+// but preserves the full string untouched when maxChars is Infinity (used for APPEND).
+export function truncateFileContent(text, maxChars = 12000) {
+  if (!text) return '';
+  return (Number.isFinite(maxChars) && text.length > maxChars)
+    ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]`
+    : text;
+}
+
+// Combines existing file content with appended content, ensuring proper newline separation
+// and preventing data loss on files of any length.
+export function prepareAppendContent(existing, addition) {
+  if (existing === undefined || existing === null || existing === '') return addition || '';
+  const sep = existing.endsWith('\n') ? '' : '\n';
+  return existing + sep + (addition || '');
+}
 // Basename with .md added, lowercased. Two files with the same name in different folders
 // share a key, so the check errs toward refusing.
 export function cleanName(name) {
