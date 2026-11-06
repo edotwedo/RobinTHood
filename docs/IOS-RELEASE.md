@@ -75,5 +75,8 @@ the AdMob app and units, then add these secrets; `app.config.js` bakes them in a
 
 ## Local builds
 
-`ios.buildNumber` in `app.json` is used only for Xcode builds; CI overrides it with the run
-number. No Mac is needed for CI — the job runs on GitHub's `macos-15` runner.
+`ios.buildNumber` in `app.json` is still `6`, which is what a local Xcode build uses.
+`ios-release` sets `ROBIN_IOS_BUILD_NUMBER` to the GitHub run number before prebuild, then
+`node iosBuild.js` writes that number into `CFBundleVersion` and `CURRENT_PROJECT_VERSION`.
+TestFlight reads the literal plist value, so the xcodebuild setting alone kept uploading
+build 6. No Mac is needed for CI — the job runs on GitHub's `macos-15` runner.
