@@ -64,7 +64,7 @@ export async function pickAttachment(maxChars = 12000) {
   return { kind: 'text', name, text: text.length > maxChars ? text.slice(0, maxChars) + `\n\n[cut off: file is ${text.length} characters]` : text };
 }
 
-import { cleanName, prepareAppendContent, truncateFileContent } from './actions';
+import { appendVia, cleanName, prepareAppendContent, truncateFileContent } from './actions';
 export { cleanName };
 
 // The display name of a SAF document URI.
@@ -125,14 +125,15 @@ export async function writeFile(dirUri, name, content) {
 
 export async function appendFile(dirUri, name, content) {
   const fileName = cleanName(name);
-  const exists = await fileExists(dirUri, fileName);
-  let finalContent = content;
-  if (exists) {
-    const existing = await readFile(dirUri, fileName, Infinity);
-    finalContent = prepareAppendContent(existing, content);
-  }
-  const saved = await writeFile(dirUri, fileName, finalContent);
-  return { ...saved, appended: exists };
+  return appendVia(
+    {
+      exists: (n) => fileExists(dirUri, n),
+      read: (n, max) => readFile(dirUri, n, max),
+      write: (n, text) => writeFile(dirUri, n, text),
+    },
+    fileName,
+    content
+  );
 }
 
 export async function searchLocalFiles(dirUri, query, maxHits = 6) {
@@ -252,16 +253,20 @@ export async function writeAll(path, content) {
 
 export async function appendAll(path, content) {
   const full = writePath(path);
-  let finalContent = content;
-  const exists = await fs().exists(full);
-  if (exists) {
-    const existing = await fs().readFile(full, 'utf8');
-    finalContent = prepareAppendContent(existing, content);
-  } else {
-    await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
-  }
-  await fs().writeFile(full, finalContent, 'utf8');
-  return { name: full.slice(rootPath().length + 1), chars: finalContent.length, replaced: exists, appended: exists };
+  return appendVia(
+    {
+      exists: () => fs().exists(full),
+      read: () => fs().readFile(full, 'utf8'),
+      write: async (_n, body) => {
+        const had = await fs().exists(full);
+        if (!had) await fs().mkdir(full.slice(0, full.lastIndexOf('/')));
+        await fs().writeFile(full, body, 'utf8');
+        return { name: full.slice(rootPath().length + 1), chars: body.length };
+      },
+    },
+    full,
+    content
+  );
 }
 
 export async function searchAllFiles(query, folder = 'Documents/RobinTHood', maxHits = 6) {

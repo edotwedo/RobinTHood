@@ -1,11 +1,11 @@
 // node --test android-app/append.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CUT_OFF_RE, prepareAppendContent, truncateFileContent } from './actions.js';
+import { CUT_OFF_RE, appendVia, checkFileAction, prepareAppendContent, truncateFileContent } from './actions.js';
 
 test('QA P1 REPRO: truncateFileContent truncates on finite limit but preserves full text with Infinity', () => {
   const longText = 'A'.repeat(15000);
-  
+
   // Model READ defaults to 12000 chars: cut off marker appended
   const truncated = truncateFileContent(longText, 12000);
   assert.equal(truncated.length, 12000 + '\n\n[cut off: file is 15000 characters]'.length);
@@ -18,26 +18,68 @@ test('QA P1 REPRO: truncateFileContent truncates on finite limit but preserves f
   assert.equal(CUT_OFF_RE.test(full), false);
 });
 
-test('QA P1 REPRO: appendFile on file > 12k chars preserves existing content and does not truncate', () => {
-  // Simulate the bug:
+test('QA P1 REPRO: appendVia with truncating read reproduces truncation bug if Infinity omitted, preserves file if Infinity used', async () => {
+  // Reproducing the bug:
   // Before fix: appendFile called readFile(dir, name) with default maxChars = 12000,
   // losing characters 12001..20000 and planting "[cut off: file is 20000 characters]" into the file.
+  const storage = new Map();
   const original20k = 'Header line\n' + 'X'.repeat(20000) + '\nFooter line\n';
-  const newEntry = '- New log entry appended';
+  storage.set('notes.md', original20k);
 
-  // Simulating previous buggy appendFile behavior:
-  const buggyExisting = truncateFileContent(original20k, 12000);
-  const buggyResult = prepareAppendContent(buggyExisting, newEntry);
-  assert.match(buggyResult, CUT_OFF_RE, 'Bug reproduced: previous code injected cut off marker');
-  assert.ok(buggyResult.length < original20k.length, 'Bug reproduced: previous code truncated 20k file to ~12k');
+  // reader simulates readFile/readAll: defaults to 12000 maxChars when maxChars is omitted or finite
+  const truncatingRead = async (name, maxChars = 12000) => {
+    return truncateFileContent(storage.get(name) || '', maxChars);
+  };
+  const write = async (name, text) => {
+    storage.set(name, text);
+    return { name, chars: text.length, replaced: true };
+  };
+  const exists = async (name) => storage.has(name);
 
-  // Simulating fixed appendFile behavior (readFile with Infinity):
-  const fixedExisting = truncateFileContent(original20k, Infinity);
-  const fixedResult = prepareAppendContent(fixedExisting, newEntry);
-  assert.equal(CUT_OFF_RE.test(fixedResult), false, 'Fixed code does not inject cut off marker');
-  assert.equal(fixedResult.length, original20k.length + newEntry.length, 'Full 20k length + new entry preserved');
-  assert.ok(fixedResult.startsWith('Header line\n'));
-  assert.ok(fixedResult.endsWith(newEntry));
+  // 1. Reproduce bug: if append implementation calls read(name) without Infinity:
+  const buggyAppend = async (name, addition) => {
+    const had = await exists(name);
+    // Bug: omitted Infinity -> read defaulted to 12000 and truncated!
+    const body = had ? prepareAppendContent(await truncatingRead(name), addition) : addition;
+    return write(name, body);
+  };
+
+  await buggyAppend('notes.md', '- New entry');
+  const corrupted = storage.get('notes.md');
+  assert.match(corrupted, CUT_OFF_RE, 'Bug reproduced: omitted Infinity caused cut-off marker');
+  assert.ok(corrupted.length < original20k.length, 'Bug reproduced: file truncated to ~12k');
+
+  // 2. Verified fix using appendVia:
+  storage.set('notes.md', original20k);
+  const res = await appendVia({ exists, read: truncatingRead, write }, 'notes.md', '- New log entry appended');
+  assert.equal(res.appended, true);
+  // Nit verification: appendVia must drop replaced from the result
+  assert.equal(res.replaced, undefined, 'replaced must not be returned on append');
+  const saved = storage.get('notes.md');
+  assert.equal(saved.length, original20k.length + '- New log entry appended'.length);
+  assert.doesNotMatch(saved, CUT_OFF_RE, 'Fixed code does not inject cut off marker');
+  assert.ok(saved.startsWith('Header line\n'));
+  assert.ok(saved.endsWith('- New log entry appended'));
+});
+
+test('appendVia creates new file when target does not exist', async () => {
+  const storage = new Map();
+  let readCalled = false;
+  const read = async (name, maxChars) => {
+    readCalled = true;
+    return storage.get(name) || '';
+  };
+  const write = async (name, text) => {
+    storage.set(name, text);
+    return { name, chars: text.length };
+  };
+  const exists = async (name) => storage.has(name);
+
+  const res = await appendVia({ exists, read, write }, 'new.md', 'Brand new content');
+  assert.equal(res.appended, false);
+  assert.equal(res.replaced, undefined);
+  assert.equal(readCalled, false, 'read must not be called when file does not exist');
+  assert.equal(storage.get('new.md'), 'Brand new content');
 });
 
 test('prepareAppendContent handles edge cases: newlines, empty existing, and clean separation', () => {
@@ -51,45 +93,34 @@ test('prepareAppendContent handles edge cases: newlines, empty existing, and cle
   assert.equal(prepareAppendContent(undefined, 'first line'), 'first line');
 });
 
-test('Store append contract: appending to >12k char file preserves full content without data loss', async () => {
-  const storage = new Map();
-  const initialLargeContent = '# Big Journal\n' + 'Line of text.\n'.repeat(1500); // ~22.5k characters
-  storage.set('journal.md', initialLargeContent);
+test('Agent refusal: checkFileAction guards WRITE and APPEND correctly', () => {
+  const partialFiles = new Set(['big_note.md']);
 
-  const mockStore = {
-    async read(name, maxChars = 12000) {
-      const raw = storage.get(name) || '';
-      return truncateFileContent(raw, maxChars);
-    },
-    async write(name, content) {
-      storage.set(name, content);
-      return { name, chars: content.length };
-    },
-    async append(name, addition) {
-      // Fixed append implementation: reads existing with Infinity
-      const existing = await this.read(name, Infinity);
-      const combined = prepareAppendContent(existing, addition);
-      await this.write(name, combined);
-      return { name, appended: true, chars: combined.length };
-    }
-  };
+  // 1. Refuse APPEND if content contains cut-off marker
+  assert.throws(
+    () => checkFileAction({ kind: 'APPEND', arg: 'big_note.md', body: 'text\n[cut off: file is 15000 characters]\nmore' }, { partialFiles }),
+    /append rejected: content contains cut off marker/
+  );
 
-  const addition = '## Append Entry\n- 10:00 AM Meeting completed\n';
-  const res = await mockStore.append('journal.md', addition);
-  assert.equal(res.appended, true);
+  // 2. Allow safe APPEND even if the file is in partialFiles (append doesn't overwrite unseen parts)
+  assert.doesNotThrow(
+    () => checkFileAction({ kind: 'APPEND', arg: 'big_note.md', body: 'safe append line' }, { partialFiles })
+  );
 
-  // Verify file on disk kept ALL 22.5k characters and appended cleanly
-  const saved = storage.get('journal.md');
-  assert.equal(saved.length, initialLargeContent.length + addition.length);
-  assert.equal(CUT_OFF_RE.test(saved), false);
-  assert.ok(saved.includes('## Append Entry'));
+  // 3. Refuse WRITE if file is in partialFiles
+  assert.throws(
+    () => checkFileAction({ kind: 'WRITE', arg: 'big_note.md', body: 'overwriting content' }, { partialFiles }),
+    /is longer than Robin can read at once.*Writing it would delete the rest/
+  );
 
-  // Normal read with default maxChars still protects model context from overflowing
-  const modelView = await mockStore.read('journal.md');
-  assert.match(modelView, CUT_OFF_RE);
-});
+  // 4. Refuse WRITE if body contains cut-off marker
+  assert.throws(
+    () => checkFileAction({ kind: 'WRITE', arg: 'other.md', body: 'preview\n[cut off: file is 14000 characters]' }, { partialFiles }),
+    /is longer than Robin can read at once.*Writing it would delete the rest/
+  );
 
-test('Safety: CUT_OFF_RE marker in append body is rejected', () => {
-  const badBody = 'Some text\n[cut off: file is 15000 characters]\nmore text';
-  assert.ok(CUT_OFF_RE.test(badBody));
+  // 5. Allow normal WRITE on non-partial files
+  assert.doesNotThrow(
+    () => checkFileAction({ kind: 'WRITE', arg: 'clean.md', body: 'clean content' }, { partialFiles })
+  );
 });

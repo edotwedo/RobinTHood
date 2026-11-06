@@ -125,6 +125,27 @@ export function prepareAppendContent(existing, addition) {
   const sep = existing.endsWith('\n') ? '' : '\n';
   return existing + sep + (addition || '');
 }
+
+// Pure file append operation: reads with Infinity to prevent cut-off truncation,
+// prepares combined content, writes to target, and guarantees clean append return state.
+export async function appendVia({ exists, read, write }, name, content) {
+  const had = Boolean(await exists(name));
+  const body = had ? prepareAppendContent(await read(name, Infinity), content) : (content || '');
+  const res = await write(name, body);
+  const { replaced, ...rest } = res || {};
+  return { ...rest, appended: had };
+}
+
+// Refuses actions that would cause data loss on large files or inject cut-off markers.
+export function checkFileAction(action, { partialFiles = new Set() } = {}) {
+  if (action?.kind === 'WRITE' && (partialFiles.has(fileKey(action.arg)) || CUT_OFF_RE.test(action.body))) {
+    throw new Error(`${action.arg} is longer than Robin can read at once, so it saw only the start. Writing it would `
+      + 'delete the rest. Do not overwrite it; save the change to a new file and tell the user');
+  }
+  if (action?.kind === 'APPEND' && CUT_OFF_RE.test(action.body)) {
+    throw new Error(`${action.arg} append rejected: content contains cut off marker. Do not append truncated text.`);
+  }
+}
 // Basename with .md added, lowercased. Two files with the same name in different folders
 // share a key, so the check errs toward refusing.
 export function cleanName(name) {
