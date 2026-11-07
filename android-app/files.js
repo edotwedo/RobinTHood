@@ -153,11 +153,14 @@ export async function searchLocalFiles(dirUri, query, maxHits = 6) {
         async (n) => {
           const info = await getInfoAsync(byName.get(n));
           sizes.set(n, info.size || 0);
-          return { mtime: (info.modificationTime || 0) * 1000, size: info.size };
+          // SAF size is InputStream.available(): 0 on some cloud providers, so 0 means unknown.
+          return { mtime: (info.modificationTime || 0) * 1000, size: info.size || null };
         },
         async (n) => {
           checkReadable(n, sizes.get(n) || 0);
-          return readAsStringAsync(byName.get(n));
+          const text = await readAsStringAsync(byName.get(n));
+          checkReadable(n, text.length);
+          return text;
         }
       );
       const ftsHits = await searchFts(db, q, maxHits);
