@@ -44,8 +44,8 @@ def deploy_bundle(service, aab_path, track_name="track001"):
         # A push that doesn't bump versionCode rebuilds a code Play already has, and Play
         # rejects the upload. That is not a failed deploy, so skip it (issue #47).
         local_code = app_version_code()
-        known = {b.get("versionCode") for b in service.edits().bundles().list(
-            packageName=PACKAGE, editId=edit_id).execute().get("bundles", [])}
+        known = {int(b["versionCode"]) for b in service.edits().bundles().list(
+            packageName=PACKAGE, editId=edit_id).execute().get("bundles", []) if b.get("versionCode") is not None}
         if local_code is not None and local_code in known:
             print(f"versionCode {local_code} is already on Play; nothing to deploy. Bump it to release.")
             service.edits().delete(packageName=PACKAGE, editId=edit_id).execute()
