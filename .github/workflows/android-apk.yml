@@ -208,13 +208,6 @@ jobs:
             --title "RobinTHood Android (latest build)" \
             --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Phone install: RobinTHood.apk. Play Console upload: the .aab bundle."
 
-      # donnas-pc has no system Python; without this the deploy step skipped itself on every run.
-      - name: Python for the Play upload
-        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       # Automatically deploy the signed Play bundle directly to Google Play Closed Testing track (track001)
       - name: Deploy to Google Play Closed Testing (track001)
         if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
