@@ -49,9 +49,13 @@ const luhn = (digits) => {
 
 const FINDERS = [
   { type: 'secret', label: 'API key or token', re: /(?:(?:sk|rk)[-_][A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}|ya29\.[0-9A-Za-z_-]+|Bearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})(?![A-Za-z0-9_-])/g },
-  { type: 'card', label: 'card number', re: /(?<!\d)(?:\d[ -]?){13,19}\b/g, ok: (m) => { const d = m.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); } },
+  // Starts and ends on a digit, so the space after the number stays in the text (#41).
+  { type: 'card', label: 'card number', re: /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/g, ok: (m) => { const d = m.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); } },
   { type: 'ssn', label: 'Social Security number', re: /(?:\b\d{3}-\d{2}-\d{4}\b|\b\d{3}\s\d{2}\s\d{4}\b)/g },
-  { type: 'email', label: 'email address', re: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]+\.[A-Z]{2,}/gi },
+  // A missing space after a sentence ("alice@example.com.Then") reads as one more domain
+  // label; drop trailing Capitalised words while a dotted domain remains (#40).
+  { type: 'email', label: 'email address', re: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@(?:[A-Z0-9-]+\.)+[A-Z]{2,63}(?![A-Z0-9-])/gi,
+    trim: (m) => { let t = m; while (/\.[A-Z][a-z]+$/.test(t) && /@[^@]*\.[^@]*\./.test(t)) t = t.replace(/\.[A-Z][a-z]+$/, ''); return t; } },
   { type: 'password', label: 'password or PIN', re: /\b(?:password|passcode|passphrase|pin|pw)\s*(?:is|:|=|(?<=\bpin\s+))\s*\S+/gi },
   { type: 'phone', label: 'phone number', re: /(?<![\w.])(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g },
   { type: 'address', label: 'street address', re: /\b\d{1,5}\s+(?:[A-Za-z]+\s){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b\.?/gi },
@@ -63,11 +67,12 @@ export function detectSensitive(text) {
   const found = [];
   for (const f of FINDERS) {
     for (const m of src.matchAll(f.re)) {
-      const start = m.index, end = m.index + m[0].length;
-      if (f.ok && !f.ok(m[0])) continue;
+      const text = f.trim ? f.trim(m[0]) : m[0];
+      const start = m.index, end = m.index + text.length;
+      if (f.ok && !f.ok(text)) continue;
       if (claimed.some(([a, b]) => start < b && end > a)) continue;
       claimed.push([start, end]);
-      found.push({ type: f.type, label: f.label, text: m[0], start, end });
+      found.push({ type: f.type, label: f.label, text, start, end });
     }
   }
   return found.sort((a, b) => a.start - b.start);
@@ -318,7 +323,22 @@ export function parseVaultSecrets(content, { startIndex = 1, existingEntities = 
   return result;
 }
 
-export function parseFrontmatterEntities(text, { startIndex = 1, existingEntities = {}, tokenMap = {} } = {}) {
+// Splits a YAML inline list body on commas outside quotes, so "ACME, Inc" stays one item (#42).
+function splitInlineList(body) {
+  const items = [];
+  let cur = '', quote = null;
+  for (const ch of body) {
+    if (quote) { if (ch === quote) quote = null; cur += ch; }
+    else if (ch === '"' || ch === "'") { quote = ch; cur += ch; }
+    else if (ch === ',') { items.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  items.push(cur);
+  // An unclosed quote is malformed YAML; don't let it swallow every later item.
+  return quote ? body.split(',') : items;
+}
+
+export function parseFrontmatterEntities(text,{ startIndex = 1, existingEntities = {}, tokenMap = {} } = {}) {
   if (!text || typeof text !== 'string') return {};
   const cleaned = text.replace(/^\uFEFF/, '');
   const match = cleaned.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -335,7 +355,7 @@ export function parseFrontmatterEntities(text, { startIndex = 1, existingEntitie
 
     const inlineMatch = trimmed.match(/^(?:secrets|shield|vault_secrets):\s*\[(.*?)\]\s*$/i);
     if (inlineMatch) {
-      const rawItems = inlineMatch[1].split(',');
+      const rawItems = splitInlineList(inlineMatch[1]);
       for (const item of rawItems) {
         const cleanedItem = item.trim().replace(/^["']|["']$/g, '').trim();
         if (cleanedItem && isSafeKey(cleanedItem)) {
