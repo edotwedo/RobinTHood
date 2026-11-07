@@ -121,10 +121,10 @@ async function streamOllama({ baseUrl, model, messages, onChunk, signal }) {
   let full = '';
   while (true) {
     const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
+    // On done, flush the decoder and keep a last line that has no newline (as readSSE does).
+    buf += done ? decoder.decode() : decoder.decode(value, { stream: true });
     const lines = buf.split('\n');
-    buf = lines.pop();
+    buf = done ? '' : lines.pop();
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
@@ -133,6 +133,7 @@ async function streamOllama({ baseUrl, model, messages, onChunk, signal }) {
         if (piece) { full += piece; onChunk(stripThink(full)); }
       } catch {}
     }
+    if (done) break;
   }
   const clean = stripThink(full).trim();
   if (!clean) throw new Error('No reply from Ollama');

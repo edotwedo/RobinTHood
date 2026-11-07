@@ -252,3 +252,13 @@ test('quoted inline vault entities containing a comma stay whole (#42)', () => {
     Other: '[ENTITY_2]',
   });
 });
+
+test('QA regressions from #55: mixed-case domains, apostrophes, hyphen after TLD', () => {
+  const hit = (t) => detectSensitive(t).filter((f) => f.type === 'email').map((f) => f.text);
+  for (const e of ['x@Mail.Example.Com', 'me@sub.Example.Org', 'a@mail.Google.Com', 'a@b.co.Uk', 'me@sub.example.Org'])
+    assert.deepEqual(hit(`mail ${e} now`), [e], e);
+  assert.deepEqual(hit('u@host.example.com-x'), ['u@host.example.com']);
+  assert.deepEqual(hit('Email alice@example.com.Then call me'), ['alice@example.com']);
+  assert.deepEqual(Object.keys(parseFrontmatterEntities("---\nsecrets: [O'Brien, D'Arcy]\n---\n")), ["O'Brien", "D'Arcy"]);
+  assert.deepEqual(Object.keys(parseFrontmatterEntities("---\nsecrets: [it's, Bob's Diner, 'Quoted, One']\n---\n")), ["it's", "Bob's Diner", 'Quoted, One']);
+});
