@@ -14,10 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Builds on Phil's build PC (self-hosted Windows runner "donnas-pc"), which keeps
-  # Gradle, NDK and npm caches warm between runs. Run steps use Git Bash.
+  # Builds on Phil's Linux machine (self-hosted runner "phil-linux", NVMe, 32 GB), which
+  # keeps Gradle, NDK and npm caches warm between runs. donnas-pc is for Windows apps only.
   build:
-    runs-on: [self-hosted, Windows, donnas-pc]
+    runs-on: [self-hosted, Linux, phil-linux]
     timeout-minutes: 90
     env:
       # Search worker signing key; app.config.js bakes it into extra.robinSecret.
@@ -30,20 +30,7 @@ jobs:
         working-directory: android-app
         shell: bash
     steps:
-      # React Native's native build paths run long; let git check them out.
-      # cmd, not powershell: the PC's execution policy blocks the .ps1 files Actions writes.
-      - name: Enable long paths for git
-        shell: cmd
-        working-directory: .
-        run: git config --global core.longpaths true
-
       - uses: actions/checkout@v4
-
-      # The runner runs as SYSTEM, whose PATH lacks Git's bash.
-      - name: Put Git Bash on PATH
-        shell: cmd
-        working-directory: .
-        run: '>>"%GITHUB_PATH%" echo C:\Program Files\Git\bin'
 
       - uses: actions/setup-node@v4
         with:
@@ -57,46 +44,25 @@ jobs:
           java-version: 17
 
       # Installs the SDK command-line tools and accepts licenses, so Gradle can fetch the
-      # platforms, build-tools, NDK and CMake the app needs. The SDK lives in C:\android-sdk (the SSD; D: is the HDD)
-      # so it survives between runs. (android-actions/setup-android can't unpack on this
-      # runner: Expand-Archive rejects its extension-less download.)
-      - name: Android SDK (persistent on the build PC)
+      # platforms, build-tools, NDK and CMake the app needs. The SDK lives in ~/android-sdk
+      # so it survives between runs.
+      - name: Android SDK (persistent on the build machine)
         working-directory: .
         run: |
-          SDK='C:\android-sdk'
-          SDKU=$(cygpath -u "$SDK")
-          TOOLS="$SDKU/cmdline-tools/latest/bin/sdkmanager.bat"
-          if [ ! -f "$TOOLS" ]; then
-            ZIP="$(cygpath -u "$RUNNER_TEMP")/cmdline-tools.zip"
-            curl -fsSL -o "$ZIP" https://dl.google.com/android/repository/commandlinetools-win-12266719_latest.zip
-            rm -rf "$SDKU/cmdline-tools/tmp" && mkdir -p "$SDKU/cmdline-tools"
-            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory('$(cygpath -w "$ZIP")', '$SDK\cmdline-tools\tmp')"
-            mv "$SDKU/cmdline-tools/tmp/cmdline-tools" "$SDKU/cmdline-tools/latest"
-            rm -rf "$SDKU/cmdline-tools/tmp"
+          SDK="$HOME/android-sdk"
+          TOOLS="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$TOOLS" ]; then
+            ZIP="$RUNNER_TEMP/cmdline-tools.zip"
+            curl -fsSL -o "$ZIP" https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
+            rm -rf "$SDK/cmdline-tools/tmp" && mkdir -p "$SDK/cmdline-tools"
+            unzip -q "$ZIP" -d "$SDK/cmdline-tools/tmp"
+            mv "$SDK/cmdline-tools/tmp/cmdline-tools" "$SDK/cmdline-tools/latest"
+            rm -rf "$SDK/cmdline-tools/tmp" "$ZIP"
           fi
           yes | "$TOOLS" --sdk_root="$SDK" --licenses > /dev/null || true
-          ls "$SDKU/licenses"
+          ls "$SDK/licenses"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
-
-      # React Native's C++ object paths exceed Windows' 260-character limit. The ninja in
-      # the SDK's CMake 3.22.1 is 1.10.2, which can't use long paths; 1.12+ can (Windows
-      # LongPathsEnabled is on). Install CMake up front and swap in ninja 1.12.1, once.
-      - name: Long-path ninja for the C++ build
-        working-directory: .
-        run: |
-          SDKU=$(cygpath -u "$ANDROID_HOME")
-          NINJA="$SDKU/cmake/3.22.1/bin/ninja.exe"
-          [ -f "$NINJA" ] || "$SDKU/cmdline-tools/latest/bin/sdkmanager.bat" --sdk_root="$ANDROID_HOME" "cmake;3.22.1" > /dev/null
-          if [ "$("$NINJA" --version)" != "1.12.1" ]; then
-            ZIP="$(cygpath -u "$RUNNER_TEMP")/ninja-win.zip"
-            curl -fsSL -o "$ZIP" https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip
-            OUT="$(cygpath -u "$RUNNER_TEMP")/ninja-new" && rm -rf "$OUT" && mkdir -p "$OUT"
-            powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory('$(cygpath -w "$ZIP")', '$(cygpath -w "$OUT")')"
-            cp "$NINJA" "$NINJA.1.10.2.bak" 2>/dev/null || true
-            cp "$OUT/ninja.exe" "$NINJA"
-          fi
-          "$NINJA" --version
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -214,6 +180,8 @@ jobs:
         working-directory: .
         env:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          # play_status.py prints check marks; a cp1252 console crashed mid-deploy (run 42349857937).
+          PYTHONIOENCODING: utf-8
         run: |
           if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
             echo "::error::No PLAY_SERVICE_ACCOUNT_JSON secret configured; cannot do Play deployment."
@@ -237,8 +205,11 @@ jobs:
             echo "::error::Python not found on runner; cannot do Play deployment."
             exit 1
           fi
-          $PYTHON_CMD -m pip install --quiet google-api-python-client google-auth
-          PLAY_SERVICE_ACCOUNT_KEY=play_key.json $PYTHON_CMD scripts/play_status.py --deploy android-app/dist/RobinTHood-play.aab --track track001
+          # A venv: the build machine's system Python refuses pip installs (PEP 668).
+          $PYTHON_CMD -m venv "$RUNNER_TEMP/play-venv"
+          VPY="$RUNNER_TEMP/play-venv/bin/python"; [ -x "$VPY" ] || VPY="$RUNNER_TEMP/play-venv/Scripts/python.exe"
+          "$VPY" -m pip install --quiet google-api-python-client google-auth
+          PLAY_SERVICE_ACCOUNT_KEY=play_key.json "$VPY" scripts/play_status.py --deploy android-app/dist/RobinTHood-play.aab --track track001
 
   # iPhone: proves the native iOS app compiles (simulator build, no signing).
   # Installing on real iPhones needs an Apple Developer account + TestFlight.
