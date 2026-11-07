@@ -3,6 +3,7 @@
 // so the model can see what was said earlier.
 import { fetch } from 'expo/fetch';
 import { IMAGE_BUDGET_CHARS, withImages } from './photos';
+import { readSSE, stripThink } from './sse.js';
 
 const OVH = 'https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions';
 const KILO = 'https://ai-gateway.kilo.ai/api/v1/chat/completions';
@@ -52,55 +53,6 @@ export function buildMessages(history, _unused, extraSystem) {
   let system = `${SYSTEM_PROMPT} Today is ${today}.`;
   if (extraSystem) system += `\n\n${extraSystem}`;
   return [{ role: 'system', content: system }, ...withImages(kept)];
-}
-
-// Removes reasoning: closed <think> blocks, a stray </think> with no opener, and a
-// <think> still open (mid-stream), so reasoning never shows in the answer bubble.
-function stripThink(text) {
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '').replace(/<think>[\s\S]*$/i, '');
-}
-
-// Read an OpenAI-style SSE stream, calling onChunk with the answer text so far and
-// onThinking with the reasoning so far (thinking models stream that first, often for
-// a minute or more). onAlive fires on every event, thinking included.
-async function readSSE(res, onChunk, signal, onThinking, onAlive) {
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  let full = '';
-  let thinking = '';
-  while (true) {
-    if (signal?.aborted) throw new Error('Stopped');
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line.startsWith('data:')) continue;
-      onAlive?.();
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return full;
-      try {
-        const json = JSON.parse(data);
-        const d = json.choices?.[0]?.delta;
-        const reasoning = d?.reasoning ?? d?.reasoning_content;
-        if (typeof reasoning === 'string' && reasoning.length) {
-          thinking += reasoning;
-          onThinking?.(thinking);
-        }
-        const delta = d?.content ?? json.choices?.[0]?.message?.content;
-        if (typeof delta === 'string' && delta.length) {
-          full += delta;
-          onChunk(stripThink(full));
-        }
-      } catch {
-        // partial or non-JSON line; ignore
-      }
-    }
-  }
-  return full;
 }
 
 // Free providers rate-limit per phone, and OVH does it per model (2 requests a minute
