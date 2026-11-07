@@ -53,9 +53,10 @@ const FINDERS = [
   { type: 'card', label: 'card number', re: /(?<!\d)\d(?:[ -]?\d){12,18}(?!\d)/g, ok: (m) => { const d = m.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); } },
   { type: 'ssn', label: 'Social Security number', re: /(?:\b\d{3}-\d{2}-\d{4}\b|\b\d{3}\s\d{2}\s\d{4}\b)/g },
   // A missing space after a sentence ("alice@example.com.Then") reads as one more domain
-  // label; drop trailing Capitalised words while a dotted domain remains (#40).
-  { type: 'email', label: 'email address', re: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@(?:[A-Z0-9-]+\.)+[A-Z]{2,63}(?![A-Z0-9-])/gi,
-    trim: (m) => { let t = m; while (/\.[A-Z][a-z]+$/.test(t) && /@[^@]*\.[^@]*\./.test(t)) t = t.replace(/\.[A-Z][a-z]+$/, ''); return t; } },
+  // label (#40). Drop it only when it is a Capitalised word of 4+ letters right after an
+  // all-lowercase label: real mixed-case domains (x@Mail.Example.Com, a@b.co.Uk) stay whole.
+  { type: 'email', label: 'email address', re: /(?<![A-Z0-9._%+-])[A-Z0-9._%+-]{1,64}@(?:[A-Z0-9-]+\.)+[A-Z]{2,63}(?![A-Z0-9])/gi,
+    trim: (m) => { let t = m; while (/@[^@]*\.[a-z0-9-]+\.[A-Z][a-z]{3,}$/.test(t)) t = t.replace(/\.[A-Z][a-z]{3,}$/, ''); return t; } },
   { type: 'password', label: 'password or PIN', re: /\b(?:password|passcode|passphrase|pin|pw)\s*(?:is|:|=|(?<=\bpin\s+))\s*\S+/gi },
   { type: 'phone', label: 'phone number', re: /(?<![\w.])(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/g },
   { type: 'address', label: 'street address', re: /\b\d{1,5}\s+(?:[A-Za-z]+\s){1,3}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b\.?/gi },
@@ -329,7 +330,8 @@ function splitInlineList(body) {
   let cur = '', quote = null;
   for (const ch of body) {
     if (quote) { if (ch === quote) quote = null; cur += ch; }
-    else if (ch === '"' || ch === "'") { quote = ch; cur += ch; }
+    // A quote opens only at the start of an item, so apostrophes (O'Brien) stay literal.
+    else if ((ch === '"' || ch === "'") && !cur.trim()) { quote = ch; cur += ch; }
     else if (ch === ',') { items.push(cur); cur = ''; }
     else cur += ch;
   }
