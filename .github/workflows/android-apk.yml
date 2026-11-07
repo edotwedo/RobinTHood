@@ -208,6 +208,13 @@ jobs:
             --title "RobinTHood Android (latest build)" \
             --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Phone install: RobinTHood.apk. Play Console upload: the .aab bundle."
 
+      # donnas-pc has no system Python; without this the deploy step skipped itself on every run.
+      - name: Python for the Play upload
+        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # Automatically deploy the signed Play bundle directly to Google Play Closed Testing track (track001)
       - name: Deploy to Google Play Closed Testing (track001)
         if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
@@ -216,12 +223,12 @@ jobs:
           PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
         run: |
           if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "No PLAY_SERVICE_ACCOUNT_JSON secret configured; skipping Play deployment."
-            exit 0
+            echo "::error::No PLAY_SERVICE_ACCOUNT_JSON secret configured; cannot do Play deployment."
+            exit 1
           fi
           if [ ! -f "android-app/dist/RobinTHood-play.aab" ]; then
-            echo "Signed Play bundle not found; skipping Play deployment."
-            exit 0
+            echo "::error::Signed Play bundle not found; cannot do Play deployment."
+            exit 1
           fi
           echo "$PLAY_SERVICE_ACCOUNT_JSON" > play_key.json
           trap 'rm -f play_key.json' EXIT
@@ -234,8 +241,8 @@ jobs:
             PYTHON_CMD="py -3"
           fi
           if [ -z "$PYTHON_CMD" ]; then
-            echo "Python not found on runner; skipping Play deployment."
-            exit 0
+            echo "::error::Python not found on runner; cannot do Play deployment."
+            exit 1
           fi
           $PYTHON_CMD -m pip install --quiet google-api-python-client google-auth
           PLAY_SERVICE_ACCOUNT_KEY=play_key.json $PYTHON_CMD scripts/play_status.py --deploy android-app/dist/RobinTHood-play.aab --track track001
