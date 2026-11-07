@@ -57,13 +57,13 @@ jobs:
           java-version: 17
 
       # Installs the SDK command-line tools and accepts licenses, so Gradle can fetch the
-      # platforms, build-tools, NDK and CMake the app needs. The SDK lives in D:\android-sdk
+      # platforms, build-tools, NDK and CMake the app needs. The SDK lives in C:\android-sdk (the SSD; D: is the HDD)
       # so it survives between runs. (android-actions/setup-android can't unpack on this
       # runner: Expand-Archive rejects its extension-less download.)
       - name: Android SDK (persistent on the build PC)
         working-directory: .
         run: |
-          SDK='D:\android-sdk'
+          SDK='C:\android-sdk'
           SDKU=$(cygpath -u "$SDK")
           TOOLS="$SDKU/cmdline-tools/latest/bin/sdkmanager.bat"
           if [ ! -f "$TOOLS" ]; then
@@ -207,13 +207,6 @@ jobs:
             --target "${{ github.sha }}" \
             --title "RobinTHood Android (latest build)" \
             --notes "Built from ${{ github.ref_name }} at ${{ github.sha }}. Phone install: RobinTHood.apk. Play Console upload: the .aab bundle."
-
-      # donnas-pc has no system Python; without this the deploy step skipped itself on every run.
-      - name: Python for the Play upload
-        if: github.ref_name == 'master' || github.ref_name == 'claude/android-rebuild'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
 
       # Automatically deploy the signed Play bundle directly to Google Play Closed Testing track (track001)
       - name: Deploy to Google Play Closed Testing (track001)
