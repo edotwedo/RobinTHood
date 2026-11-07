@@ -143,12 +143,25 @@ export async function searchLocalFiles(dirUri, query, maxHits = 6) {
   try {
     const db = await getNoteDb();
     if (db) {
+      // One listing for the whole sync; reads are full-length (no 12k cut) so the index
+      // holds the whole note.
       const byName = new Map((await entries(dirUri)).map((e) => [e.name, e.uri]));
+      const sizes = new Map();
       await syncNoteIndex(
         db,
         allNames.filter((n) => /\.(md|txt|markdown|csv)$/i.test(n)),
-        async (n) => ({ mtime: ((await getInfoAsync(byName.get(n))).modificationTime || 0) * 1000 }),
-        (n) => readFile(dirUri, n)
+        async (n) => {
+          const info = await getInfoAsync(byName.get(n));
+          sizes.set(n, info.size || 0);
+          // SAF size is InputStream.available(): 0 on some cloud providers, so 0 means unknown.
+          return { mtime: (info.modificationTime || 0) * 1000, size: info.size || null };
+        },
+        async (n) => {
+          checkReadable(n, sizes.get(n) || 0);
+          const text = await readAsStringAsync(byName.get(n));
+          checkReadable(n, text.length);
+          return text;
+        }
       );
       const ftsHits = await searchFts(db, q, maxHits);
       if (ftsHits && ftsHits.length > 0) return ftsHits;
@@ -277,8 +290,11 @@ export async function searchAllFiles(query, folder = 'Documents/RobinTHood', max
       await syncNoteIndex(
         db,
         allNames.filter((i) => !i.endsWith('/') && /\.(md|txt|markdown|csv)$/i.test(i)),
-        async (i) => ({ mtime: new Date((await fs().stat(resolvePath(pathOf(i)))).mtime).getTime() }),
-        (i) => readAll(pathOf(i))
+        async (i) => {
+          const st = await fs().stat(resolvePath(pathOf(i)));
+          return { mtime: new Date(st.mtime).getTime(), size: Number(st.size) };
+        },
+        (i) => readAll(pathOf(i), Infinity)
       );
       const ftsHits = await searchFts(db, q, maxHits);
       if (ftsHits && ftsHits.length > 0) return ftsHits;

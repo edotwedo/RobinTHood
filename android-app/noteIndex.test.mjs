@@ -1,7 +1,7 @@
 // node --test android-app/noteIndex.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, removeNote, searchFts, syncNoteIndex } from './noteIndex.js';
+import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, removeNote, searchFts, syncNoteIndex, RESCAN_MS } from './noteIndex.js';
 
 test('sanitizeFts5Query safely tokenizes and protects against FTS syntax errors', () => {
   assert.equal(sanitizeFts5Query(''), '');
@@ -120,14 +120,35 @@ test('syncNoteIndex re-indexes a note edited outside the app (#44)', async () =>
   await removeNote(db, 'sync44.md');
 });
 
-test('syncNoteIndex falls back to text length when the provider reports no mtime', async () => {
+test('syncNoteIndex without mtime: size change re-reads, same size waits for the rescan throttle', async () => {
   const db = await getNoteDb();
   let text = 'kiwi notes';
-  const stat = async () => ({});
-  await syncNoteIndex(db, ['sync44b.md'], stat, async () => text);
+  let reads = 0;
+  const stat = async () => ({ size: text.length });
+  const read = async () => { reads++; return text; };
+  const t0 = 1_000_000;
+  await syncNoteIndex(db, ['sync44b.md'], stat, read, t0);
+  await syncNoteIndex(db, ['sync44b.md'], stat, read, t0 + 1000);
+  assert.equal(reads, 1, 'unchanged size inside the throttle: no re-read');
+
   text = 'papaya notes, longer now';
-  await syncNoteIndex(db, ['sync44b.md'], stat, async () => text);
+  await syncNoteIndex(db, ['sync44b.md'], stat, read, t0 + 2000);
   assert.deepEqual((await searchFts(db, 'papaya')).map((h) => h.file), ['sync44b.md']);
   assert.deepEqual((await searchFts(db, 'kiwi')).map((h) => h.file), []);
+
+  text = 'guava notes, longer now'.padEnd(text.length, '.');
+  await syncNoteIndex(db, ['sync44b.md'], stat, read, t0 + 3000);
+  assert.deepEqual((await searchFts(db, 'guava')).map((h) => h.file), [], 'same size: waits');
+  await syncNoteIndex(db, ['sync44b.md'], stat, read, t0 + 2000 + RESCAN_MS);
+  assert.deepEqual((await searchFts(db, 'guava')).map((h) => h.file), ['sync44b.md'], 'throttle elapsed: re-read');
   await removeNote(db, 'sync44b.md');
+});
+
+test('syncNoteIndex indexes the whole note, not a 12k-truncated read', async () => {
+  const db = await getNoteDb();
+  const long = 'intro line\n' + 'filler words here\n'.repeat(1200) + 'tail rambutan marker\n';
+  assert.ok(long.length > 12000);
+  await syncNoteIndex(db, ['sync44c.md'], async () => ({ mtime: 5000 }), async () => long);
+  assert.deepEqual((await searchFts(db, 'rambutan')).map((h) => h.file), ['sync44c.md']);
+  await removeNote(db, 'sync44c.md');
 });
