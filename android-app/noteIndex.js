@@ -181,7 +181,9 @@ export async function getNoteDb(dbPath = 'robin_notes_fts.db') {
   return _dbInstance;
 }
 
-export async function indexNote(adapter, file, text, mtime = Date.now()) {
+// len is the change signal syncNoteIndex compares when a provider reports no mtime: the
+// file's byte size when known, else the text length.
+export async function indexNote(adapter, file, text, mtime = Date.now(), len) {
   if (!adapter) return;
   const cleanText = String(text || '');
   await adapter.run('DELETE FROM notes_fts WHERE file = ?', [file]);
@@ -194,31 +196,49 @@ export async function indexNote(adapter, file, text, mtime = Date.now()) {
   }
   await adapter.run(
     'INSERT OR REPLACE INTO notes_meta(file, len, updated_at) VALUES (?, ?, ?)',
-    [file, cleanText.length, mtime]
+    [file, Number.isFinite(len) ? len : cleanText.length, mtime]
   );
 }
 
-// Brings the index up to date with the notes on disk: indexes new ones and re-indexes any
-// whose modified time changed since they were indexed, so an edit made outside the app is
-// searchable (#44). statOf(name) -> { mtime } in ms (missing on some SAF providers; then
-// the text length decides); readOf(name) -> text. Never removes rows: the SAF folder and
-// All files access share this index, and each passes only its own names.
-export async function syncNoteIndex(adapter, names, statOf, readOf) {
+// When the provider gives no mtime (Android SAF content:// URIs), a note is re-read at most
+// once per RESCAN_MS even if its size is unchanged, so same-size edits surface eventually
+// without every search re-reading the whole folder.
+export const RESCAN_MS = 10 * 60 * 1000;
+const lastRead = new Map();
+
+// Brings the index up to date with the notes on disk (#44): indexes new notes and re-indexes
+// changed ones. statOf(name) -> { mtime (ms), size (bytes) }, either may be missing.
+// readOf(name) -> the FULL text (never a truncated read, or long notes lose their tail).
+// With an mtime, a note is re-read only when it changes. Without one, a size change triggers
+// a re-read, and otherwise the RESCAN_MS throttle does. Never removes rows: the SAF folder
+// and All files access share this index, and each passes only its own names.
+export async function syncNoteIndex(adapter, names, statOf, readOf, now = Date.now()) {
   if (!adapter) return;
   const rows = await adapter.all('SELECT file, len, updated_at FROM notes_meta');
   const known = new Map((rows || []).map((r) => [r.file, r]));
   for (const name of names) {
     const row = known.get(name);
     let mtime = null;
+    let size = null;
     try {
-      const m = Number((await statOf(name))?.mtime);
+      const st = (await statOf(name)) || {};
+      const m = Number(st.mtime);
       if (Number.isFinite(m) && m > 0) mtime = Math.round(m);
+      if (st.size != null && Number.isFinite(Number(st.size))) size = Number(st.size);
     } catch {}
-    if (row && mtime !== null && Number(row.updated_at) === mtime) continue;
+    if (row) {
+      if (mtime !== null) {
+        if (Number(row.updated_at) === mtime) continue;
+      } else {
+        const sameSize = size !== null && Number(row.len) === size;
+        const recent = now - (lastRead.get(name) ?? -Infinity) < RESCAN_MS;
+        if (recent && (size === null || sameSize)) continue;
+      }
+    }
     try {
       const body = await readOf(name);
-      if (row && mtime === null && Number(row.len) === String(body || '').length) continue;
-      await indexNote(adapter, name, body, mtime ?? Date.now());
+      lastRead.set(name, now);
+      await indexNote(adapter, name, body, mtime ?? now, size ?? undefined);
     } catch {}
   }
 }
