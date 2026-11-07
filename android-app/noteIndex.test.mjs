@@ -1,7 +1,7 @@
 // node --test android-app/noteIndex.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, removeNote, searchFts } from './noteIndex.js';
+import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, removeNote, searchFts, syncNoteIndex } from './noteIndex.js';
 
 test('sanitizeFts5Query safely tokenizes and protects against FTS syntax errors', () => {
   assert.equal(sanitizeFts5Query(''), '');
@@ -96,4 +96,38 @@ test('createFolderStore / createAllFilesStore polymorphism works as expected', a
   const results = await mockFolderStore.search('world');
   assert.equal(results.length, 1);
   assert.equal(results[0].file, 'a.md');
+});
+
+test('syncNoteIndex re-indexes a note edited outside the app (#44)', async () => {
+  const db = await getNoteDb();
+  const disk = { 'sync44.md': { text: 'old pineapple plan', mtime: 1000 } };
+  const stat = async (n) => ({ mtime: disk[n].mtime });
+  let reads = 0;
+  const read = async (n) => { reads++; return disk[n].text; };
+  const files = (hits) => hits.map((h) => h.file);
+
+  await syncNoteIndex(db, ['sync44.md'], stat, read);
+  assert.deepEqual(files(await searchFts(db, 'pineapple')), ['sync44.md']);
+
+  // Unchanged mtime: no re-read.
+  await syncNoteIndex(db, ['sync44.md'], stat, read);
+  assert.equal(reads, 1);
+
+  disk['sync44.md'] = { text: 'new mango plan', mtime: 2000 };
+  await syncNoteIndex(db, ['sync44.md'], stat, read);
+  assert.deepEqual(files(await searchFts(db, 'pineapple')), []);
+  assert.deepEqual(files(await searchFts(db, 'mango')), ['sync44.md']);
+  await removeNote(db, 'sync44.md');
+});
+
+test('syncNoteIndex falls back to text length when the provider reports no mtime', async () => {
+  const db = await getNoteDb();
+  let text = 'kiwi notes';
+  const stat = async () => ({});
+  await syncNoteIndex(db, ['sync44b.md'], stat, async () => text);
+  text = 'papaya notes, longer now';
+  await syncNoteIndex(db, ['sync44b.md'], stat, async () => text);
+  assert.deepEqual((await searchFts(db, 'papaya')).map((h) => h.file), ['sync44b.md']);
+  assert.deepEqual((await searchFts(db, 'kiwi')).map((h) => h.file), []);
+  await removeNote(db, 'sync44b.md');
 });
