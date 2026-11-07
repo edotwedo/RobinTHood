@@ -2,6 +2,7 @@
 """Query Google Play Console status, or upload and deploy an AAB release bundle."""
 
 import argparse
+import json
 import os
 import sys
 from google.oauth2 import service_account
@@ -14,6 +15,16 @@ KEY_FILE = os.environ.get(
 )
 PACKAGE = "com.edotwedo.robinthood"
 SCOPES = ["https://www.googleapis.com/auth/androidpublisher"]
+
+
+def app_version_code():
+    """The Android versionCode in android-app/app.json, or None if it can't be read."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "android-app", "app.json")
+    try:
+        with open(path) as f:
+            return int(json.load(f)["expo"]["android"]["versionCode"])
+    except (OSError, KeyError, TypeError, ValueError):
+        return None
 
 
 def deploy_bundle(service, aab_path, track_name="track001"):
@@ -30,6 +41,16 @@ def deploy_bundle(service, aab_path, track_name="track001"):
     print(f"Created edit: {edit_id}")
 
     try:
+        # A push that doesn't bump versionCode rebuilds a code Play already has, and Play
+        # rejects the upload. That is not a failed deploy, so skip it (issue #47).
+        local_code = app_version_code()
+        known = {b.get("versionCode") for b in service.edits().bundles().list(
+            packageName=PACKAGE, editId=edit_id).execute().get("bundles", [])}
+        if local_code is not None and local_code in known:
+            print(f"versionCode {local_code} is already on Play; nothing to deploy. Bump it to release.")
+            service.edits().delete(packageName=PACKAGE, editId=edit_id).execute()
+            return
+
         print("Uploading AAB bundle (this may take a few moments)...")
         media = MediaFileUpload(aab_path, mimetype="application/octet-stream", resumable=True)
         bundle_resp = service.edits().bundles().upload(
