@@ -334,7 +334,8 @@ function splitInlineList(body) {
     else cur += ch;
   }
   items.push(cur);
-  return items;
+  // An unclosed quote is malformed YAML; don't let it swallow every later item.
+  return quote ? body.split(',') : items;
 }
 
 export function parseFrontmatterEntities(text,{ startIndex = 1, existingEntities = {}, tokenMap = {} } = {}) {
