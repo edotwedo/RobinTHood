@@ -8,6 +8,7 @@ import { KeyboardAvoidingView, KeyboardProvider } from 'react-native-keyboard-co
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 import Constants from 'expo-constants';
+import { useFonts } from 'expo-font';
 
 import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
@@ -18,7 +19,7 @@ import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { wrapFile } from './actions';
 import { detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
-import { C } from './theme';
+import { C, F } from './theme';
 
 import MessageRow from './components/MessageRow';
 import SettingsModal from './components/SettingsModal';
@@ -82,6 +83,14 @@ function withAttachment(text, file) {
 
 function Chat() {
   const insets = useSafeAreaInsets();
+  // Load the bundled fonts before first paint. If they fail, fall through to the system font
+  // rather than blocking the app on a blank screen.
+  const [fontsLoaded, fontError] = useFonts({
+    [F.regular]: require('./assets/fonts/Poppins-Regular.ttf'),
+    [F.medium]: require('./assets/fonts/Poppins-Medium.ttf'),
+    [F.semibold]: require('./assets/fonts/Poppins-SemiBold.ttf'),
+    [F.bold]: require('./assets/fonts/Poppins-Bold.ttf'),
+  });
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [messages, setMessages] = useState([INTRO]);
   const [input, setInput] = useState('');
@@ -402,6 +411,8 @@ function Chat() {
 
   const models = availableModels(settings);
 
+  if (!fontsLoaded && !fontError) return <View style={styles.boot} />;
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar style="light" />
@@ -562,8 +573,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
+  boot: { flex: 1, backgroundColor: C.bg },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line },
-  title: { color: C.text, fontSize: 18, fontWeight: '800' },
+  title: { color: C.text, fontSize: 19, fontFamily: F.bold },
   modelChip: { color: C.green, fontSize: 12, fontWeight: '600', marginTop: 2 },
   headerBtn: { paddingHorizontal: 10, paddingVertical: 6, marginLeft: 6, backgroundColor: C.panel2, borderRadius: 8 },
   headerBtnText: { color: C.dim, fontSize: 13, fontWeight: '600' },
@@ -587,7 +599,7 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg },
   attachBtn: { width: 36, height: 42, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
   attachIcon: { fontSize: 20 },
-  input: { flex: 1, backgroundColor: C.panel, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#f9fafb', fontSize: 15, maxHeight: 140, borderWidth: 1, borderColor: C.border },
+  input: { flex: 1, backgroundColor: C.panel, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#f9fafb', fontSize: 15.5, fontFamily: F.regular, maxHeight: 140, borderWidth: 1, borderColor: C.border },
   sendBtn: { backgroundColor: C.green, width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   sendText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 });

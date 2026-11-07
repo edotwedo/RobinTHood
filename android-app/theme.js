@@ -1,4 +1,4 @@
-// Theme palette for RobinTHood UI
+// Theme palette and type scale for the RobinTHood UI.
 export const C = {
   bg: '#0b0f19',
   panel: '#111827',
@@ -11,4 +11,14 @@ export const C = {
   green: '#10b981',
   user: '#1e293b',
   red: '#f87171',
+  gold: '#d8ab45',
+};
+
+// Poppins, bundled under assets/fonts and loaded in App.js. Each weight is its own family,
+// so styles using these must NOT also set fontWeight (Android would synthesise a fake bold).
+export const F = {
+  regular: 'Poppins-Regular',
+  medium: 'Poppins-Medium',
+  semibold: 'Poppins-SemiBold',
+  bold: 'Poppins-Bold',
 };

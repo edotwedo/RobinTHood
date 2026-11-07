@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
-import { C } from '../theme';
+import { C, F } from '../theme';
 import { nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
-    <View>
+    <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         style={styles.fieldInput}
@@ -21,6 +21,68 @@ export function Field({ label, value, placeholder, onChange, secure }) {
         secureTextEntry={secure}
       />
     </View>
+  );
+}
+
+function Section({ title, note, children }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {note ? <Text style={styles.sectionNote}>{note}</Text> : null}
+      <View style={styles.card}>{children}</View>
+    </View>
+  );
+}
+
+function Row({ label, hint, value, onPress, right, last }) {
+  const body = (
+    <>
+      <View style={styles.rowText}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        {value ? <Text style={styles.rowValue} numberOfLines={2}>{value}</Text> : null}
+        {hint ? <Text style={styles.rowHint}>{hint}</Text> : null}
+      </View>
+      {right}
+      {onPress ? <Text style={styles.chevron}>›</Text> : null}
+    </>
+  );
+  const style = [styles.row, !last && styles.rowDivider];
+  return onPress ? (
+    <Pressable style={style} onPress={onPress} android_ripple={{ color: C.panel2 }}>
+      {body}
+    </Pressable>
+  ) : (
+    <View style={style}>{body}</View>
+  );
+}
+
+function Stack({ last, children }) {
+  return <View style={[styles.stackRow, !last && styles.rowDivider]}>{children}</View>;
+}
+
+function Pills({ options, value, onChange }) {
+  return (
+    <View style={styles.pillRow}>
+      {options.map(([label, v]) => {
+        const active = value === v;
+        return (
+          <Pressable key={String(v)} style={[styles.pill, active && styles.pillActive]} onPress={() => onChange(v)}>
+            <Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ToggleRow({ label, hint, value, onToggle }) {
+  return (
+    <Row
+      label={label}
+      hint={hint}
+      last
+      right={<Switch value={value} onValueChange={onToggle} trackColor={{ false: C.panel2, true: C.green }} thumbColor="#fff" />}
+    />
   );
 }
 
@@ -41,238 +103,210 @@ export default function SettingsModal({
   const [ollamaStatus, setOllamaStatus] = useState('');
   const [vaultStatus, setVaultStatus] = useState('');
 
+  const folderLabel = settings.filesUri ? (nameOf(settings.filesUri) || 'Chosen folder') : 'Choose a folder';
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.overlay, { paddingTop: insetsTop + 20 }]}>
-        <View style={styles.card}>
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.cardTitle}>{t('settingsTitle', settings.lang)}</Text>
-            <Pressable style={styles.linkBtn} onPress={onOpenPrivacy}>
-              <Text style={styles.linkBtnText}>Privacy and your data ›</Text>
+      <View style={[styles.overlay, { paddingTop: insetsTop }]}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>{t('settingsTitle', settings.lang)}</Text>
+            <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+              <Text style={styles.closeIcon}>✕</Text>
             </Pressable>
+          </View>
 
-            {__DEV__ ? (
-              <>
-                <Text style={styles.fieldLabel}>RobinTHood Pro (dev toggle)</Text>
-                <Pressable
-                  style={[styles.proCard, settings.isPro && styles.proCardActive]}
-                  onPress={() => setSettings((s) => ({ ...s, isPro: !s.isPro }))}
-                >
-                  <View style={styles.proCardHeader}>
-                    <Text style={styles.proCardTitle}>{settings.isPro ? '✨ Pro Unlocked' : '🚀 Upgrade to Pro'}</Text>
-                    <Text style={styles.proCardPrice}>{settings.isPro ? 'ACTIVE' : '$49.99'}</Text>
-                  </View>
-                  <Text style={styles.proCardDesc}>
-                    {settings.isPro ? 'Ads are off.' : 'Turns the ads off. Testing only until Play Billing is set up.'}
-                  </Text>
-                  <View style={[styles.proCardAction, settings.isPro && { backgroundColor: '#065f46' }]}>
-                    <Text style={styles.proCardActionText}>
-                      {settings.isPro ? '✓ Pro Active (Tap to Toggle Test)' : 'Unlock Lifetime Pro ($49.99)'}
-                    </Text>
-                  </View>
-                </Pressable>
-              </>
-            ) : null}
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollBody}>
+            <Section title="Language">
+              <View style={styles.pillWrap}>
+                {SUPPORTED_LANGS.map((code) => {
+                  const active = settings.lang === code;
+                  return (
+                    <Pressable
+                      key={code}
+                      style={[styles.pill, active && styles.pillActive]}
+                      onPress={() => setSettings((s) => ({ ...s, lang: code }))}
+                    >
+                      <Text style={[styles.pillText, active && styles.pillTextActive]}>{LANG_NAMES[code] || code}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Section>
 
-            <Text style={styles.fieldLabel}>Language</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              {SUPPORTED_LANGS.map((code) => {
-                const label = LANG_NAMES[code] || code;
-                return (
-                  <Pressable
-                    key={code}
-                    style={[styles.pill, settings.lang === code && styles.optionActive, { marginRight: 6 }]}
-                    onPress={() => setSettings((s) => ({ ...s, lang: code }))}
-                  >
-                    <Text style={[styles.optionText, settings.lang === code && { color: '#fff', fontWeight: '700' }]}>
-                      {label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            <Field
-              label="Home Ollama URL (optional)"
-              value={settings.ollamaUrl}
-              placeholder="http://my-pc.tailscale.net:11434"
-              onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))}
-            />
-            {/^http:\/\//i.test(settings.ollamaUrl) ? (
-              <Text style={styles.hint}>
-                http:// is not encrypted. That is fine over Tailscale or your home Wi-Fi, not over the open internet.
-              </Text>
-            ) : null}
-
-            <Field
-              label="Ollama model"
-              value={settings.ollamaModel}
-              placeholder="llama3.1"
-              onChange={(v) => setSettings((s) => ({ ...s, ollamaModel: v.trim() }))}
-            />
-            <Pressable
-              style={[styles.pill, { alignSelf: 'flex-start', marginTop: 4, marginBottom: 8 }]}
-              onPress={async () => {
-                setOllamaStatus('Searching LAN for Ollama...');
-                const found = await discoverOllamaLan(settings.ollamaUrl ? [settings.ollamaUrl] : []);
-                if (found) {
-                  setSettings((s) => ({
-                    ...s,
-                    ollamaUrl: found.url,
-                    ollamaModel: found.recommendedModel || s.ollamaModel || 'llama3.2',
-                  }));
-                  setOllamaStatus(`✓ Found Ollama: ${found.url} (${found.recommendedModel})`);
-                } else {
-                  setOllamaStatus('✗ No Ollama instance detected on local network');
+            <Section title="Assistant" note="How Robin answers, and what it is allowed to reach.">
+              <ToggleRow
+                label="Air-gapped mode"
+                hint="Disables web search and keeps every query on your own Ollama server — 100% offline."
+                value={settings.airGapped}
+                onToggle={() =>
+                  setSettings((s) => {
+                    const next = !s.airGapped;
+                    return {
+                      ...s,
+                      airGapped: next,
+                      webSearch: next ? false : s.webSearch,
+                      selectedModel: next ? 'ollama' : (s.selectedModel === 'ollama' ? 'ovh-120b' : s.selectedModel),
+                    };
+                  })
                 }
-              }}
-            >
-              <Text style={styles.optionText}>🔍 Auto-Detect Home Ollama on LAN</Text>
-            </Pressable>
-            {ollamaStatus ? <Text style={styles.hint}>{ollamaStatus}</Text> : null}
+              />
+            </Section>
 
-            <Text style={styles.fieldLabel}>Air-Gapped Mode (100% Offline)</Text>
-            <Pressable
-              style={[styles.pill, settings.airGapped && styles.optionActive]}
-              onPress={() =>
-                setSettings((s) => {
-                  const nextAirGapped = !s.airGapped;
-                  return {
-                    ...s,
-                    airGapped: nextAirGapped,
-                    webSearch: nextAirGapped ? false : s.webSearch,
-                    selectedModel: nextAirGapped ? 'ollama' : (s.selectedModel === 'ollama' ? 'ovh-120b' : s.selectedModel),
-                  };
-                })
-              }
-            >
-              <Text style={[styles.optionText, settings.airGapped && { color: '#fff', fontWeight: '700' }]}>
-                {settings.airGapped ? '🛡️ Air-Gapped Mode: ON (Local / Ollama Only)' : '🛡️ Air-Gapped Mode: OFF'}
-              </Text>
-            </Pressable>
-            <Text style={styles.hint}>
-              Disables web search and restricts queries strictly to your local Ollama instance for 100% offline, zero-cloud querying.
-            </Text>
+            <Section title="Models" note="Optional. Leave blank to use the free hosted models.">
+              <Stack>
+                <Field
+                  label="Home Ollama URL"
+                  value={settings.ollamaUrl}
+                  placeholder="http://my-pc.tailscale.net:11434"
+                  onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))}
+                />
+                {/^http:\/\//i.test(settings.ollamaUrl) ? (
+                  <Text style={styles.inlineHint}>http:// is not encrypted. Fine over Tailscale or your home Wi-Fi, not the open internet.</Text>
+                ) : null}
+              </Stack>
+              <Stack>
+                <Field
+                  label="Ollama model"
+                  value={settings.ollamaModel}
+                  placeholder="llama3.1"
+                  onChange={(v) => setSettings((s) => ({ ...s, ollamaModel: v.trim() }))}
+                />
+              </Stack>
+              <Row
+                label="Find Ollama on this network"
+                hint={ollamaStatus || 'Scans your LAN for a running Ollama server.'}
+                onPress={async () => {
+                  setOllamaStatus('Searching LAN for Ollama…');
+                  const found = await discoverOllamaLan(settings.ollamaUrl ? [settings.ollamaUrl] : []);
+                  if (found) {
+                    setSettings((s) => ({
+                      ...s,
+                      ollamaUrl: found.url,
+                      ollamaModel: found.recommendedModel || s.ollamaModel || 'llama3.2',
+                    }));
+                    setOllamaStatus(`Found ${found.url} (${found.recommendedModel})`);
+                  } else {
+                    setOllamaStatus('No Ollama instance found on this network');
+                  }
+                }}
+                last
+              />
+            </Section>
 
-            <Field
-              label="OpenRouter key (optional)"
-              value={settings.openRouterKey}
-              placeholder="sk-or-v1-..."
-              secure
-              onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))}
-            />
-            <Field
-              label="OpenRouter model"
-              value={settings.openRouterModel}
-              placeholder="openrouter/free"
-              onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))}
-            />
+            <Section title="OpenRouter" note="Optional. Bring your own key for extra models.">
+              <Stack>
+                <Field
+                  label="API key"
+                  value={settings.openRouterKey}
+                  placeholder="sk-or-v1-…"
+                  secure
+                  onChange={(v) => setSettings((s) => ({ ...s, openRouterKey: v.trim() }))}
+                />
+              </Stack>
+              <Stack last>
+                <Field
+                  label="Model"
+                  value={settings.openRouterModel}
+                  placeholder="openrouter/free"
+                  onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))}
+                />
+              </Stack>
+            </Section>
 
-            {isIos ? (
-              <>
-                <Text style={styles.fieldLabel}>Robin's files</Text>
-                <Text style={styles.hint}>Saved in the Files app: On My iPhone, then RobinTHood.</Text>
-              </>
-            ) : allFiles ? (
-              <>
-                <Text style={styles.fieldLabel}>Files: whole phone (personal build)</Text>
-                <Pressable style={styles.pill} onPress={() => openAllFilesSetting(packageName).catch(() => {})}>
-                  <Text style={styles.optionText}>📂 All files access: open the switch</Text>
-                </Pressable>
-                <Text style={styles.hint}>New files without a folder go to Documents/RobinTHood.</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.fieldLabel}>Robin's folder (files Robin can read and write)</Text>
-                <Pressable
-                  style={styles.pill}
+            <Section title="Files & notes" note="Robin reads and writes plain text and Markdown in one place you choose.">
+              {isIos ? (
+                <Row label="Robin's files" hint="In the Files app: On My iPhone, then RobinTHood." last />
+              ) : allFiles ? (
+                <Row
+                  label="Whole phone access"
+                  hint="Personal build. Files without a folder go to Documents/RobinTHood."
+                  value="On"
+                  onPress={() => openAllFilesSetting(packageName).catch(() => {})}
+                  last
+                />
+              ) : (
+                <Row
+                  label="Robin's folder"
+                  value={folderLabel}
                   onPress={async () => {
                     try {
                       const uri = await pickFolder();
                       setSettings((s) => ({ ...s, filesUri: uri }));
                     } catch {}
                   }}
-                >
-                  <Text style={styles.optionText}>
-                    {settings.filesUri ? `📁 ${nameOf(settings.filesUri) || 'Chosen folder'}  (tap to change)` : '📁 Choose a folder'}
-                  </Text>
-                </Pressable>
-              </>
-            )}
-
-            <Text style={styles.fieldLabel}>Obsidian Vault Quick-Connect</Text>
-            <Pressable
-              style={[styles.pill, settings.obsidianVault && styles.optionActive]}
-              onPress={async () => {
-                try {
-                  if (allFiles) {
-                    setSettings((s) => ({ ...s, obsidianVault: 'Documents/Obsidian', filesUri: 'allfiles:Documents/Obsidian' }));
-                    setVaultStatus('✓ Connected to Documents/Obsidian');
-                  } else {
-                    const uri = await pickFolder();
-                    if (uri) {
-                      setSettings((s) => ({ ...s, obsidianVault: uri, filesUri: uri }));
-                      setVaultStatus(`✓ Connected: ${nameOf(uri) || 'Obsidian Vault'}`);
+                  last
+                />
+              )}
+              <Row
+                label="Obsidian vault"
+                value={
+                  settings.obsidianVault
+                    ? (allFiles ? 'Documents/Obsidian' : (nameOf(settings.obsidianVault) || 'Connected'))
+                    : 'Not connected'
+                }
+                hint={vaultStatus || 'Secrets from _vault_secrets.json or note frontmatter are shielded before sending.'}
+                onPress={async () => {
+                  try {
+                    if (allFiles) {
+                      setSettings((s) => ({ ...s, obsidianVault: 'Documents/Obsidian', filesUri: 'allfiles:Documents/Obsidian' }));
+                      setVaultStatus('Connected to Documents/Obsidian');
+                    } else {
+                      const uri = await pickFolder();
+                      if (uri) {
+                        setSettings((s) => ({ ...s, obsidianVault: uri, filesUri: uri }));
+                        setVaultStatus(`Connected: ${nameOf(uri) || 'Obsidian vault'}`);
+                      }
                     }
-                  }
-                } catch {}
-              }}
-            >
-              <Text style={[styles.optionText, settings.obsidianVault && { color: '#fff', fontWeight: '700' }]}>
-                {settings.obsidianVault
-                  ? `🔮 Obsidian Vault: ${allFiles ? 'Documents/Obsidian' : (nameOf(settings.obsidianVault) || 'Connected')}`
-                  : '🔮 Quick-Connect Obsidian Vault (Documents/Obsidian)'}
-              </Text>
-            </Pressable>
-            {vaultStatus ? <Text style={styles.hint}>{vaultStatus}</Text> : null}
-            <Text style={styles.hint}>
-              Reads and writes Markdown notes in your vault. Custom secrets defined in _vault_secrets.json or note frontmatter (secrets: [...]) are shielded before leaving the phone.
-            </Text>
+                  } catch {}
+                }}
+                last
+              />
+            </Section>
 
-            <Text style={styles.fieldLabel}>Music volume</Text>
-            <View style={styles.pillRow}>
-              {[
-                ['Quiet', 0.15],
-                ['Normal', 0.3],
-                ['Loud', 0.6],
-              ].map(([name, v]) => (
-                <Pressable
-                  key={name}
-                  style={[styles.pill, settings.musicVolume === v && styles.optionActive]}
-                  onPress={() => setSettings((s) => ({ ...s, musicVolume: v, music: true }))}
-                >
-                  <Text style={[styles.optionText, settings.musicVolume === v && { color: '#fff', fontWeight: '700' }]}>
-                    {name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <Section title="Audio">
+              <Row label="Music volume" last>
+                <Pills
+                  options={[['Quiet', 0.15], ['Normal', 0.3], ['Loud', 0.6]]}
+                  value={settings.musicVolume}
+                  onChange={(v) => setSettings((s) => ({ ...s, musicVolume: v, music: true }))}
+                />
+              </Row>
+            </Section>
 
-            <Text style={styles.hint}>
-              RobinTHood {Constants.expoConfig?.version}. When Web Search is enabled, queries are retrieved securely via our
-              edge infrastructure using live search providers (Brave Search, DuckDuckGo, Wikipedia). Chat history and private
-              keys remain stored locally on your device. The free version shows Google ads; the ads SDK collects device
-              identifiers, as the privacy policy explains.
-            </Text>
+            <Section title="Privacy & data">
+              <Row label="Privacy and your data" onPress={onOpenPrivacy} last />
+              {!settings.isPro ? <Row label="Ad privacy choices" onPress={openAdPrivacyOptions} last /> : null}
+              <Row
+                label="Privacy policy"
+                onPress={() => handleOpenSource('https://robinthood-search.phone-liaison.workers.dev/privacy')}
+                last
+              />
+            </Section>
 
-            {!settings.isPro ? (
-              <Pressable style={[styles.pill, { marginTop: 8, alignItems: 'center' }]} onPress={openAdPrivacyOptions}>
-                <Text style={styles.optionText}>Ad privacy choices</Text>
-              </Pressable>
+            {__DEV__ ? (
+              <Section title="Developer">
+                <Row
+                  label="RobinTHood Pro (dev toggle)"
+                  hint="Turns the ads off. Testing only until Play Billing is set up."
+                  value={settings.isPro ? 'Active' : 'Off'}
+                  onPress={() => setSettings((s) => ({ ...s, isPro: !s.isPro }))}
+                  last
+                />
+              </Section>
             ) : null}
 
-            <Pressable
-              style={[styles.pill, { marginTop: 8, alignItems: 'center', justifyContent: 'center' }]}
-              onPress={() => handleOpenSource('https://robinthood-search.phone-liaison.workers.dev/privacy')}
-            >
-              <Text style={[styles.optionText, { color: C.green, fontWeight: '600' }]}>
-                🔒 Privacy Policy & Data Disclosures ↗
-              </Text>
-            </Pressable>
+            <Text style={styles.about}>
+              RobinTHood {Constants.expoConfig?.version}. When Web Search is on, queries go through our edge
+              infrastructure to live search providers (Brave Search, DuckDuckGo, Wikipedia) and the pages are read
+              there, never from your phone. Chat history and keys stay on this device. The free version shows Google
+              ads, and Google's ads SDK collects device identifiers, as the privacy policy explains.
+            </Text>
 
-            <Pressable style={styles.closeBtn} onPress={onClose}>
-              <Text style={styles.closeText}>Done</Text>
+            <Pressable style={styles.doneBtn} onPress={onClose}>
+              <Text style={styles.doneText}>Done</Text>
             </Pressable>
+            <View style={{ height: 24 }} />
           </ScrollView>
         </View>
       </View>
@@ -281,41 +315,67 @@ export default function SettingsModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  card: { backgroundColor: C.panel, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: C.border, maxHeight: '90%' },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#f9fafb', marginBottom: 14 },
-  linkBtn: { alignSelf: 'flex-start', paddingVertical: 6, marginTop: 6 },
-  linkBtnText: { color: '#60a5fa', fontSize: 13, fontWeight: '600' },
-  fieldLabel: { fontSize: 12, color: C.dim, marginTop: 12, marginBottom: 6, fontWeight: '600' },
-  fieldInput: { backgroundColor: C.panel2, borderRadius: 8, padding: 10, color: '#f9fafb', fontSize: 14, borderWidth: 1, borderColor: C.border },
-  pill: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, backgroundColor: C.panel2 },
-  pillRow: { flexDirection: 'row', gap: 8 },
-  optionActive: { backgroundColor: C.green },
-  optionText: { color: C.dim, fontSize: 14 },
-  hint: { color: C.faint, fontSize: 12, marginTop: 12 },
-  closeBtn: { backgroundColor: C.green, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 20 },
-  closeText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
-  proCard: {
-    backgroundColor: C.panel2,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#374151',
-    marginBottom: 14,
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.bg,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderColor: C.border,
+    height: '92%',
   },
-  proCardActive: {
-    borderColor: C.green,
-    backgroundColor: '#06281e',
-  },
-  proCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  proCardTitle: { fontSize: 15, fontWeight: '700', color: '#f3f4f6' },
-  proCardPrice: { fontSize: 13, fontWeight: '700', color: C.green },
-  proCardDesc: { fontSize: 12, color: C.dim, lineHeight: 16, marginBottom: 10 },
-  proCardAction: {
-    backgroundColor: C.green,
-    borderRadius: 6,
-    paddingVertical: 8,
+  sheetHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
   },
-  proCardActionText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  sheetTitle: { color: C.text, fontSize: 20, fontFamily: F.bold },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.panel2, alignItems: 'center', justifyContent: 'center' },
+  closeIcon: { color: C.dim, fontSize: 14, fontFamily: F.semibold },
+  scrollBody: { padding: 16 },
+
+  section: { marginBottom: 22 },
+  sectionTitle: { color: C.green, fontSize: 12, fontFamily: F.semibold, letterSpacing: 1.2, marginBottom: 4, marginLeft: 2 },
+  sectionNote: { color: C.faint, fontSize: 12, fontFamily: F.regular, lineHeight: 17, marginBottom: 10, marginLeft: 2 },
+  card: { backgroundColor: C.panel, borderRadius: 14, borderWidth: 1, borderColor: C.line, overflow: 'hidden' },
+
+  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 13, gap: 10 },
+  stackRow: { paddingHorizontal: 14, paddingVertical: 13 },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: C.line },
+  rowText: { flex: 1 },
+  rowLabel: { color: C.text, fontSize: 14.5, fontFamily: F.medium },
+  rowValue: { color: C.dim, fontSize: 12.5, fontFamily: F.regular, marginTop: 3 },
+  rowHint: { color: C.faint, fontSize: 12, fontFamily: F.regular, lineHeight: 17, marginTop: 3 },
+  chevron: { color: C.faint, fontSize: 20, fontFamily: F.regular },
+
+  field: { marginTop: 6 },
+  fieldLabel: { color: C.faint, fontSize: 11.5, fontFamily: F.medium, marginBottom: 6 },
+  fieldInput: {
+    backgroundColor: C.panel2,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: C.text,
+    fontSize: 14,
+    fontFamily: F.regular,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  inlineHint: { color: C.faint, fontSize: 11.5, fontFamily: F.regular, lineHeight: 16, marginTop: 6 },
+
+  pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, padding: 12 },
+  pillRow: { flexDirection: 'row', gap: 8 },
+  pill: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 999, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border },
+  pillActive: { backgroundColor: C.green, borderColor: C.green },
+  pillText: { color: C.dim, fontSize: 13, fontFamily: F.medium },
+  pillTextActive: { color: '#04140d', fontFamily: F.semibold },
+
+  about: { color: C.faint, fontSize: 11.5, fontFamily: F.regular, lineHeight: 17, marginHorizontal: 2, marginBottom: 16 },
+  doneBtn: { backgroundColor: C.green, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  doneText: { color: '#04140d', fontFamily: F.semibold, fontSize: 15 },
 });
