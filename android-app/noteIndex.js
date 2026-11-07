@@ -122,8 +122,8 @@ export async function createSqliteAdapter(dbPath = 'robin_notes_fts.db') {
       }
     },
     async all(sql, params = []) {
-      if (/SELECT file, len FROM notes_meta/i.test(sql)) {
-        return Array.from(memTables.entries()).map(([file, d]) => ({ file, len: d.len }));
+      if (/SELECT file, len(, updated_at)? FROM notes_meta/i.test(sql)) {
+        return Array.from(memTables.entries()).map(([file, d]) => ({ file, len: d.len, updated_at: d.updated_at }));
       }
       if (/SELECT file FROM notes_meta/i.test(sql)) {
         return Array.from(memTables.keys()).map((file) => ({ file }));
@@ -196,6 +196,31 @@ export async function indexNote(adapter, file, text, mtime = Date.now()) {
     'INSERT OR REPLACE INTO notes_meta(file, len, updated_at) VALUES (?, ?, ?)',
     [file, cleanText.length, mtime]
   );
+}
+
+// Brings the index up to date with the notes on disk: indexes new ones and re-indexes any
+// whose modified time changed since they were indexed, so an edit made outside the app is
+// searchable (#44). statOf(name) -> { mtime } in ms (missing on some SAF providers; then
+// the text length decides); readOf(name) -> text. Never removes rows: the SAF folder and
+// All files access share this index, and each passes only its own names.
+export async function syncNoteIndex(adapter, names, statOf, readOf) {
+  if (!adapter) return;
+  const rows = await adapter.all('SELECT file, len, updated_at FROM notes_meta');
+  const known = new Map((rows || []).map((r) => [r.file, r]));
+  for (const name of names) {
+    const row = known.get(name);
+    let mtime = null;
+    try {
+      const m = Number((await statOf(name))?.mtime);
+      if (Number.isFinite(m) && m > 0) mtime = Math.round(m);
+    } catch {}
+    if (row && mtime !== null && Number(row.updated_at) === mtime) continue;
+    try {
+      const body = await readOf(name);
+      if (row && mtime === null && Number(row.len) === String(body || '').length) continue;
+      await indexNote(adapter, name, body, mtime ?? Date.now());
+    } catch {}
+  }
 }
 
 export async function removeNote(adapter, file) {
