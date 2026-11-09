@@ -41,7 +41,7 @@ test('report: admin csv can filter to feedback', async () => {
   assert.match(await r.text(), /^created,reason,note/);
 });
 test('report: oversize body refused whatever content-length says', async () => {
-  const b = JSON.stringify({ reason: 'other', note: 'x'.repeat(30000) });
+  const b = JSON.stringify({ reason: 'other', note: 'x'.repeat(40000) });
   assert.equal((await post(b, { ...sign(b), 'content-length': '10' })).status, 413);
 });
 test('report: rate limited -> 429', async () => {

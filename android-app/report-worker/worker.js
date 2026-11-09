@@ -10,7 +10,7 @@
 // is limited per IP, so a script can't fill D1 or push real reports out of the export.
 // 'feedback' is the Settings > Send feedback box (not an answer report): note only, up to 4000 chars.
 const REASONS = new Set(['offensive', 'sexual', 'dangerous', 'wrong', 'other', 'feedback']);
-const MAX_BODY = 20000;
+const MAX_BODY = 32000; // 4000-char feedback note can be ~24 KB once JSON escapes it
 // Reports are signed when sent, not when queued, so the window only covers clock drift.
 const SIGN_WINDOW_SEC = 600;
 const REPORTS_PER_MIN = 5;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
@@ -44,17 +44,25 @@ export default function SettingsModal({
   const [feedback, setFeedback] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
   const [feedbackSending, setFeedbackSending] = useState(false);
+  const sendingRef = useRef(false); // state lags a fast double tap; the ref does not
+
+  // The modal stays mounted between opens, so a stale "Thanks!" would greet the next visit.
+  useEffect(() => { if (!visible) setFeedbackStatus(''); }, [visible]);
 
   const sendFeedback = async () => {
-    if (!feedback.trim() || feedbackSending) return;
+    if (!feedback.trim() || sendingRef.current) return;
+    sendingRef.current = true;
     setFeedbackSending(true);
     try {
       const outcome = await submitFeedback({ note: feedback, version: Constants.expoConfig?.version });
-      setFeedback('');
-      setFeedbackStatus(outcome === 'sent' ? 'Thanks! Phil reads every one.' : 'Thanks! Saved, and it will send when you are back online.');
-    } catch {
-      setFeedbackStatus('Could not send. Try again in a minute.');
+      if (outcome === 'sent' || outcome === 'queued') setFeedback('');
+      setFeedbackStatus(
+        outcome === 'sent' ? 'Thanks! Phil reads every one.'
+          : outcome === 'queued' ? 'Thanks! Saved. It will be retried automatically.'
+            : 'Could not send. Please try again in a minute.'
+      );
     } finally {
+      sendingRef.current = false;
       setFeedbackSending(false);
     }
   };
