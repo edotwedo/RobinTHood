@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C } from '../theme';
 import { nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
+import { submitFeedback } from '../report';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
@@ -40,6 +41,31 @@ export default function SettingsModal({
 }) {
   const [ollamaStatus, setOllamaStatus] = useState('');
   const [vaultStatus, setVaultStatus] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const sendingRef = useRef(false); // state lags a fast double tap; the ref does not
+
+  // The modal stays mounted between opens, so a stale "Thanks!" would greet the next visit.
+  useEffect(() => { if (!visible) setFeedbackStatus(''); }, [visible]);
+
+  const sendFeedback = async () => {
+    if (!feedback.trim() || sendingRef.current) return;
+    sendingRef.current = true;
+    setFeedbackSending(true);
+    try {
+      const outcome = await submitFeedback({ note: feedback, version: Constants.expoConfig?.version });
+      if (outcome === 'sent' || outcome === 'queued') setFeedback('');
+      setFeedbackStatus(
+        outcome === 'sent' ? 'Thanks! Phil reads every one.'
+          : outcome === 'queued' ? 'Thanks! Saved. It will be retried automatically.'
+            : 'Could not send. Please try again in a minute.'
+      );
+    } finally {
+      sendingRef.current = false;
+      setFeedbackSending(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -50,6 +76,30 @@ export default function SettingsModal({
             <Pressable style={styles.linkBtn} onPress={onOpenPrivacy}>
               <Text style={styles.linkBtnText}>Privacy and your data ›</Text>
             </Pressable>
+
+            <View style={styles.feedbackCard}>
+              <Text style={styles.feedbackTitle}>Send feedback</Text>
+              <Text style={styles.feedbackDesc}>Bug, idea, or something you liked? Tell us. No account needed.</Text>
+              <TextInput
+                style={[styles.fieldInput, styles.feedbackInput]}
+                value={feedback}
+                onChangeText={(v) => { setFeedback(v); if (feedbackStatus) setFeedbackStatus(''); }}
+                placeholder="What should we know?"
+                placeholderTextColor={C.faint}
+                multiline
+                maxLength={4000}
+                accessibilityLabel="Feedback message"
+              />
+              <Pressable
+                style={[styles.feedbackBtn, (!feedback.trim() || feedbackSending) && { opacity: 0.5 }]}
+                onPress={sendFeedback}
+                disabled={!feedback.trim() || feedbackSending}
+                accessibilityRole="button"
+              >
+                <Text style={styles.closeText}>{feedbackSending ? 'Sending…' : 'Send feedback'}</Text>
+              </Pressable>
+              {feedbackStatus ? <Text style={styles.feedbackStatus}>{feedbackStatus}</Text> : null}
+            </View>
 
             {__DEV__ ? (
               <>
@@ -295,6 +345,12 @@ const styles = StyleSheet.create({
   hint: { color: C.faint, fontSize: 12, marginTop: 12 },
   closeBtn: { backgroundColor: C.green, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 20 },
   closeText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  feedbackCard: { backgroundColor: C.panel2, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.green, marginTop: 10, marginBottom: 4 },
+  feedbackTitle: { fontSize: 15, fontWeight: '700', color: '#f3f4f6' },
+  feedbackDesc: { fontSize: 12, color: C.dim, lineHeight: 16, marginTop: 2, marginBottom: 8 },
+  feedbackInput: { minHeight: 80, textAlignVertical: 'top' },
+  feedbackBtn: { backgroundColor: C.green, padding: 10, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  feedbackStatus: { color: C.green, fontSize: 12, marginTop: 8 },
   proCard: {
     backgroundColor: C.panel2,
     borderRadius: 12,

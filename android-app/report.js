@@ -25,17 +25,21 @@ async function post(report) {
   const timer = setTimeout(() => ctrl.abort(), 10000);
   try {
     const res = await fetch(REPORT_URL, { method: 'POST', headers: await makeAuthHeaders(body), body, signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) { const e = new Error(`HTTP ${res.status}`); e.status = res.status; throw e; }
   } finally {
     clearTimeout(timer);
   }
 }
 
+// The worker refused this report as malformed or too big; retrying never helps.
+const refused = (e) => e?.status === 400 || e?.status === 413;
+
 async function readQueue() {
   try { return JSON.parse((await AsyncStorage.getItem(QUEUE_KEY)) || '[]'); } catch { return []; }
 }
 
-// Returns 'sent' or 'queued'. Either way the user's report is kept.
+// Returns 'sent', 'queued' (network/server trouble; retried on a later launch),
+// 'refused' (worker rejected it; not kept) or 'failed' (could not be saved on the phone).
 export async function submitReport({ reason, note, model, question, answer, version }) {
   const report = {
     reason, note: note || '', model: model || '', version: version || '',
@@ -45,12 +49,22 @@ export async function submitReport({ reason, note, model, question, answer, vers
   try {
     await post(report);
     return 'sent';
-  } catch {
+  } catch (e) {
+    if (refused(e)) return 'refused';
     const q = await readQueue();
     q.push(report);
-    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-50))).catch(() => {});
+    try {
+      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(q.slice(-50)));
+    } catch {
+      return 'failed';
+    }
     return 'queued';
   }
+}
+
+// Settings > Send feedback. Same signed pipeline and offline queue as answer reports.
+export function submitFeedback({ note, version }) {
+  return submitReport({ reason: 'feedback', note: (note || '').trim().slice(0, 4000), version });
 }
 
 // Try to send reports that were saved while offline.
@@ -59,7 +73,7 @@ export async function flushReports() {
   if (!q.length) return;
   const left = [];
   for (const r of q) {
-    try { await post(r); } catch { left.push(r); }
+    try { await post(r); } catch (e) { if (!refused(e)) left.push(r); }
   }
   await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(left)).catch(() => {});
 }
