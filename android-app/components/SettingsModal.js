@@ -5,6 +5,7 @@ import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C } from '../theme';
 import { nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
+import { submitFeedback } from '../report';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
@@ -40,6 +41,23 @@ export default function SettingsModal({
 }) {
   const [ollamaStatus, setOllamaStatus] = useState('');
   const [vaultStatus, setVaultStatus] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+
+  const sendFeedback = async () => {
+    if (!feedback.trim() || feedbackSending) return;
+    setFeedbackSending(true);
+    try {
+      const outcome = await submitFeedback({ note: feedback, version: Constants.expoConfig?.version });
+      setFeedback('');
+      setFeedbackStatus(outcome === 'sent' ? 'Thanks! Phil reads every one.' : 'Thanks! Saved, and it will send when you are back online.');
+    } catch {
+      setFeedbackStatus('Could not send. Try again in a minute.');
+    } finally {
+      setFeedbackSending(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -50,6 +68,30 @@ export default function SettingsModal({
             <Pressable style={styles.linkBtn} onPress={onOpenPrivacy}>
               <Text style={styles.linkBtnText}>Privacy and your data ›</Text>
             </Pressable>
+
+            <View style={styles.feedbackCard}>
+              <Text style={styles.feedbackTitle}>Send feedback</Text>
+              <Text style={styles.feedbackDesc}>Bug, idea, or something you liked? Tell us. No account needed.</Text>
+              <TextInput
+                style={[styles.fieldInput, styles.feedbackInput]}
+                value={feedback}
+                onChangeText={(v) => { setFeedback(v); if (feedbackStatus) setFeedbackStatus(''); }}
+                placeholder="What should we know?"
+                placeholderTextColor={C.faint}
+                multiline
+                maxLength={4000}
+                accessibilityLabel="Feedback message"
+              />
+              <Pressable
+                style={[styles.feedbackBtn, (!feedback.trim() || feedbackSending) && { opacity: 0.5 }]}
+                onPress={sendFeedback}
+                disabled={!feedback.trim() || feedbackSending}
+                accessibilityRole="button"
+              >
+                <Text style={styles.closeText}>{feedbackSending ? 'Sending…' : 'Send feedback'}</Text>
+              </Pressable>
+              {feedbackStatus ? <Text style={styles.feedbackStatus}>{feedbackStatus}</Text> : null}
+            </View>
 
             {__DEV__ ? (
               <>
@@ -295,6 +337,12 @@ const styles = StyleSheet.create({
   hint: { color: C.faint, fontSize: 12, marginTop: 12 },
   closeBtn: { backgroundColor: C.green, padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 20 },
   closeText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  feedbackCard: { backgroundColor: C.panel2, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.green, marginTop: 10, marginBottom: 4 },
+  feedbackTitle: { fontSize: 15, fontWeight: '700', color: '#f3f4f6' },
+  feedbackDesc: { fontSize: 12, color: C.dim, lineHeight: 16, marginTop: 2, marginBottom: 8 },
+  feedbackInput: { minHeight: 80, textAlignVertical: 'top' },
+  feedbackBtn: { backgroundColor: C.green, padding: 10, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  feedbackStatus: { color: C.green, fontSize: 12, marginTop: 8 },
   proCard: {
     backgroundColor: C.panel2,
     borderRadius: 12,

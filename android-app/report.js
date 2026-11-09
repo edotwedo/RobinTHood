@@ -53,6 +53,11 @@ export async function submitReport({ reason, note, model, question, answer, vers
   }
 }
 
+// Settings > Send feedback. Same signed pipeline and offline queue as answer reports.
+export function submitFeedback({ note, version }) {
+  return submitReport({ reason: 'feedback', note: (note || '').trim().slice(0, 4000), version });
+}
+
 // Try to send reports that were saved while offline.
 export async function flushReports() {
   const q = await readQueue();
