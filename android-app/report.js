@@ -63,8 +63,11 @@ export async function submitReport({ reason, note, model, question, answer, vers
 }
 
 // Settings > Send feedback. Same signed pipeline and offline queue as answer reports.
+// Sent as reason 'other' with a [feedback] tag so the worker already live in production
+// accepts it (its 'other' note holds 1000 chars). No worker deploy is needed to ship this.
+export const FEEDBACK_MAX = 1000 - '[feedback] '.length;
 export function submitFeedback({ note, version }) {
-  return submitReport({ reason: 'feedback', note: (note || '').trim().slice(0, 4000), version });
+  return submitReport({ reason: 'other', note: `[feedback] ${(note || '').trim().slice(0, FEEDBACK_MAX)}`, version });
 }
 
 // Try to send reports that were saved while offline.

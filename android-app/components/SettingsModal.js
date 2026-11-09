@@ -5,7 +5,7 @@ import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C } from '../theme';
 import { nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
-import { submitFeedback } from '../report';
+import { FEEDBACK_MAX, submitFeedback } from '../report';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
@@ -87,7 +87,7 @@ export default function SettingsModal({
                 placeholder="What should we know?"
                 placeholderTextColor={C.faint}
                 multiline
-                maxLength={4000}
+                maxLength={FEEDBACK_MAX}
                 accessibilityLabel="Feedback message"
               />
               <Pressable
