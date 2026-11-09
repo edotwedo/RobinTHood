@@ -8,8 +8,9 @@
 //
 // POST /report must carry the app's HMAC headers (same scheme as the search worker) and
 // is limited per IP, so a script can't fill D1 or push real reports out of the export.
-const REASONS = new Set(['offensive', 'sexual', 'dangerous', 'wrong', 'other']);
-const MAX_BODY = 20000;
+// 'feedback' is the Settings > Send feedback box (not an answer report): note only, up to 4000 chars.
+const REASONS = new Set(['offensive', 'sexual', 'dangerous', 'wrong', 'other', 'feedback']);
+const MAX_BODY = 32000; // 4000-char feedback note can be ~24 KB once JSON escapes it
 // Reports are signed when sent, not when queued, so the window only covers clock drift.
 const SIGN_WINDOW_SEC = 600;
 const REPORTS_PER_MIN = 5;
@@ -86,14 +87,19 @@ export default {
       if (!b || !REASONS.has(b.reason)) return Response.json({ ok: false }, { status: 400 });
       await env.DB.prepare(
         'INSERT INTO reports (created, reason, note, model, question, answer, version, install_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)'
-      ).bind(new Date().toISOString(), b.reason, clean(b.note, 1000), clean(b.model, 80), clean(b.question, 2000),
+      ).bind(new Date().toISOString(), b.reason, clean(b.note, b.reason === 'feedback' ? 4000 : 1000), clean(b.model, 80), clean(b.question, 2000),
         clean(b.answer, 6000), clean(b.version, 20), clean(b.install_id, 40)).run();
       return Response.json({ ok: true });
     }
     if (req.method === 'GET' && url.pathname === '/admin/reports.csv') {
       if (!env.ADMIN_TOKEN || !timingSafeEqual(req.headers.get('authorization') || '', `Bearer ${env.ADMIN_TOKEN}`)) return new Response('no', { status: 401 });
       const cols = ['created', 'reason', 'note', 'model', 'question', 'answer', 'version', 'install_id'];
-      const { results } = await env.DB.prepare(`SELECT ${cols.join(', ')} FROM reports ORDER BY created DESC LIMIT 5000`).all();
+      // ?reason=feedback pulls just the Settings feedback; no param = everything.
+      const reason = url.searchParams.get('reason');
+      const sel = `SELECT ${cols.join(', ')} FROM reports`;
+      const { results } = REASONS.has(reason)
+        ? await env.DB.prepare(`${sel} WHERE reason = ?1 ORDER BY created DESC LIMIT 5000`).bind(reason).all()
+        : await env.DB.prepare(`${sel} ORDER BY created DESC LIMIT 5000`).all();
       return new Response(csv(cols, results), { headers: { 'content-type': 'text/csv' } });
     }
     return new Response('RobinTHood reports', { status: 404 });

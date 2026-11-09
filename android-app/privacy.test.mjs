@@ -231,3 +231,34 @@ test('detokenize is one pass: a restored value that looks like a placeholder sta
   assert.equal(detokenizeText('[ENTITY_1] and [ENTITY_2]', { '[ENTITY_1]': 'see [ENTITY_2]', '[ENTITY_2]': 'Bob' }), 'see [ENTITY_2] and Bob');
   assert.equal(detokenizeText('pay [SECRET_1]', { '[SECRET_1]': 'a$&b$1' }), 'pay a$&b$1', 'replacement text is literal');
 });
+
+test('email stops at the TLD when the next sentence follows without a space (#40)', () => {
+  const hit = (t) => detectSensitive(t).filter((f) => f.type === 'email').map((f) => f.text);
+  assert.deepEqual(hit('Email alice@example.com.Then call me'), ['alice@example.com']);
+  assert.deepEqual(hit('see foo@bar.com.Please reply'), ['foo@bar.com']);
+  assert.deepEqual(hit('write to bob@mail.example.co.uk today'), ['bob@mail.example.co.uk']);
+  assert.deepEqual(hit('SHOUT@EXAMPLE.COM'), ['SHOUT@EXAMPLE.COM']);
+});
+
+test('card masking keeps the space after the number (#41)', () => {
+  const { tokenizedText } = tokenizeSensitive('Card 4111 1111 1111 1111 and alice@example.com ok');
+  assert.match(tokenizedText, /\[CARD_1\] and \[EMAIL_1\] ok$/);
+  assert.deepEqual(detectSensitive('card 4111-1111-1111-1111- next').map((f) => f.text), ['4111-1111-1111-1111']);
+});
+
+test('quoted inline vault entities containing a comma stay whole (#42)', () => {
+  assert.deepEqual(parseFrontmatterEntities('---\nsecrets: ["ACME, Inc", Other]\n---\n'), {
+    'ACME, Inc': '[ENTITY_1]',
+    Other: '[ENTITY_2]',
+  });
+});
+
+test('QA regressions from #55: mixed-case domains, apostrophes, hyphen after TLD', () => {
+  const hit = (t) => detectSensitive(t).filter((f) => f.type === 'email').map((f) => f.text);
+  for (const e of ['x@Mail.Example.Com', 'me@sub.Example.Org', 'a@mail.Google.Com', 'a@b.co.Uk', 'me@sub.example.Org'])
+    assert.deepEqual(hit(`mail ${e} now`), [e], e);
+  assert.deepEqual(hit('u@host.example.com-x'), ['u@host.example.com']);
+  assert.deepEqual(hit('Email alice@example.com.Then call me'), ['alice@example.com']);
+  assert.deepEqual(Object.keys(parseFrontmatterEntities("---\nsecrets: [O'Brien, D'Arcy]\n---\n")), ["O'Brien", "D'Arcy"]);
+  assert.deepEqual(Object.keys(parseFrontmatterEntities("---\nsecrets: [it's, Bob's Diner, 'Quoted, One']\n---\n")), ["it's", "Bob's Diner", 'Quoted, One']);
+});

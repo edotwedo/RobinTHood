@@ -404,7 +404,11 @@ function Chat() {
       setReportSending(false);
     }
     setMessages((prev) => prev.map((m) => (m.id === reporting.message.id ? { ...m, reported: true } : m)));
-    setReportDone(outcome === 'sent' ? 'Thanks. Your report was sent.' : 'Thanks. Your report is saved and will be sent when the connection is back.');
+    setReportDone(
+      outcome === 'sent' ? 'Thanks. Your report was sent.'
+        : outcome === 'queued' ? 'Thanks. Your report is saved and will be retried later.'
+          : 'Sorry, the report could not be sent. Please try again.'
+    );
   };
 
   const toggleSteps = (id) => setExpandedSteps((prev) => ({ ...prev, [id]: !prev[id] }));

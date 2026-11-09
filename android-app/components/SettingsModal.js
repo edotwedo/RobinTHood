@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C, F } from '../theme';
 import { nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
+import { FEEDBACK_MAX, submitFeedback } from '../report';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
   return (
@@ -103,8 +104,32 @@ export default function SettingsModal({
   const [ollamaStatus, setOllamaStatus] = useState('');
   const [vaultStatus, setVaultStatus] = useState('');
   const lang = settings.lang;
+  const [feedback, setFeedback] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const sendingRef = useRef(false);
 
   const folderLabel = settings.filesUri ? (nameOf(settings.filesUri) || t('setChosenFolder', lang)) : t('setChooseFolder', lang);
+
+  useEffect(() => { if (!visible) setFeedbackStatus(''); }, [visible]);
+
+  const sendFeedback = async () => {
+    if (!feedback.trim() || sendingRef.current) return;
+    sendingRef.current = true;
+    setFeedbackSending(true);
+    try {
+      const outcome = await submitFeedback({ note: feedback, version: Constants.expoConfig?.version });
+      if (outcome === 'sent' || outcome === 'queued') setFeedback('');
+      setFeedbackStatus(
+        outcome === 'sent' ? t('setFeedbackThanks', lang)
+          : outcome === 'queued' ? t('setFeedbackQueued', lang)
+            : t('setFeedbackFail', lang)
+      );
+    } finally {
+      sendingRef.current = false;
+      setFeedbackSending(false);
+    }
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -118,6 +143,30 @@ export default function SettingsModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollBody}>
+            <Section title={t('setFeedback', lang)} note={t('setFeedbackDesc', lang)}>
+              <Stack last>
+                <TextInput
+                  style={[styles.fieldInput, styles.feedbackInput]}
+                  value={feedback}
+                  onChangeText={(v) => { setFeedback(v); if (feedbackStatus) setFeedbackStatus(''); }}
+                  placeholder={t('setFeedbackPlaceholder', lang)}
+                  placeholderTextColor={C.faint}
+                  multiline
+                  maxLength={FEEDBACK_MAX}
+                  accessibilityLabel={t('setFeedback', lang)}
+                />
+                <Pressable
+                  style={[styles.feedbackBtn, (!feedback.trim() || feedbackSending) && { opacity: 0.5 }]}
+                  onPress={sendFeedback}
+                  disabled={!feedback.trim() || feedbackSending}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.feedbackBtnText}>{feedbackSending ? t('setFeedbackSending', lang) : t('setFeedbackSend', lang)}</Text>
+                </Pressable>
+                {feedbackStatus ? <Text style={styles.feedbackStatus}>{feedbackStatus}</Text> : null}
+              </Stack>
+            </Section>
+
             <Section title={t('setLang', lang)}>
               <View style={styles.pillWrap}>
                 {SUPPORTED_LANGS.map((code) => {
@@ -322,6 +371,10 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     height: '92%',
   },
+  feedbackInput: { minHeight: 80, textAlignVertical: 'top', marginTop: 4 },
+  feedbackBtn: { backgroundColor: C.green, padding: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  feedbackBtnText: { color: '#fff', fontFamily: F.semibold, fontSize: 15 },
+  feedbackStatus: { color: C.green, fontSize: 12, fontFamily: F.regular, marginTop: 8 },
   sheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -6,7 +6,7 @@ import {
   StorageAccessFramework as SAF, documentDirectory, getInfoAsync, makeDirectoryAsync,
   readAsStringAsync, readDirectoryAsync, writeAsStringAsync,
 } from 'expo-file-system/legacy';
-import { getNoteDb, indexNote, searchFts } from './noteIndex.js';
+import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
@@ -143,16 +143,26 @@ export async function searchLocalFiles(dirUri, query, maxHits = 6) {
   try {
     const db = await getNoteDb();
     if (db) {
-      const meta = await db.all('SELECT file FROM notes_meta');
-      const indexed = new Set((meta || []).map((r) => r.file));
-      for (const name of allNames) {
-        if (!indexed.has(name) && /\.(md|txt|markdown|csv)$/i.test(name)) {
-          try {
-            const body = await readFile(dirUri, name);
-            await indexNote(db, name, body);
-          } catch {}
+      // One listing for the whole sync; reads are full-length (no 12k cut) so the index
+      // holds the whole note.
+      const byName = new Map((await entries(dirUri)).map((e) => [e.name, e.uri]));
+      const sizes = new Map();
+      await syncNoteIndex(
+        db,
+        allNames.filter((n) => /\.(md|txt|markdown|csv)$/i.test(n)),
+        async (n) => {
+          const info = await getInfoAsync(byName.get(n));
+          sizes.set(n, info.size || 0);
+          // SAF size is InputStream.available(): 0 on some cloud providers, so 0 means unknown.
+          return { mtime: (info.modificationTime || 0) * 1000, size: info.size || null };
+        },
+        async (n) => {
+          checkReadable(n, sizes.get(n) || 0);
+          const text = await readAsStringAsync(byName.get(n));
+          checkReadable(n, text.length);
+          return text;
         }
-      }
+      );
       const ftsHits = await searchFts(db, q, maxHits);
       if (ftsHits && ftsHits.length > 0) return ftsHits;
     }
@@ -276,18 +286,16 @@ export async function searchAllFiles(query, folder = 'Documents/RobinTHood', max
   try {
     const db = await getNoteDb();
     if (db) {
-      const meta = await db.all('SELECT file FROM notes_meta');
-      const indexed = new Set((meta || []).map((r) => r.file));
-      for (const item of allNames) {
-        if (item.endsWith('/') || !/\.(md|txt|markdown|csv)$/i.test(item)) continue;
-        if (!indexed.has(item)) {
-          try {
-            const filePath = folder ? `${folder.replace(/\/+$/, '')}/${item}` : item;
-            const body = await readAll(filePath);
-            await indexNote(db, item, body);
-          } catch {}
-        }
-      }
+      const pathOf = (item) => (folder ? `${folder.replace(/\/+$/, '')}/${item}` : item);
+      await syncNoteIndex(
+        db,
+        allNames.filter((i) => !i.endsWith('/') && /\.(md|txt|markdown|csv)$/i.test(i)),
+        async (i) => {
+          const st = await fs().stat(resolvePath(pathOf(i)));
+          return { mtime: new Date(st.mtime).getTime(), size: Number(st.size) };
+        },
+        (i) => readAll(pathOf(i), Infinity)
+      );
       const ftsHits = await searchFts(db, q, maxHits);
       if (ftsHits && ftsHits.length > 0) return ftsHits;
     }

@@ -11,7 +11,7 @@ const sign = (body, ts = Math.floor(Date.now() / 1000)) => {
     'x-robin-signature': createHmac('sha256', SECRET).update(`${ts}:${nonce}:${body}`).digest('hex'), 'cf-connecting-ip': '1.2.3.4' };
 };
 const rows = [];
-const DB = { prepare: () => ({ bind: (...a) => ({ run: async () => rows.push(a) }), all: async () => ({ results: [] }) }) };
+const DB = { prepare: () => ({ bind: (...a) => ({ run: async () => rows.push(a), all: async () => ({ results: [] }) }), all: async () => ({ results: [] }) }) };
 let allow = true;
 const env = { DB, ROBIN_CLIENT_SECRET: SECRET, ADMIN_TOKEN: 'adm', RATE_LIMITER: { limit: async () => ({ success: allow }) } };
 const post = (body, headers) => report.fetch(new Request('https://r/report', { method: 'POST', body, headers }), env);
@@ -25,8 +25,23 @@ test('report: signed accepted, unsigned/bad/stale refused', async () => {
   assert.equal((await post(b, sign(b + ' '))).status, 401);
   assert.equal(rows.length, 1);
 });
+test('report: feedback accepted with a longer note, unknown reason refused', async () => {
+  const before = rows.length;
+  const b = JSON.stringify({ reason: 'feedback', note: 'y'.repeat(3000) });
+  assert.equal((await post(b, sign(b))).status, 200);
+  assert.equal(rows.at(-1)[1], 'feedback');
+  assert.equal(rows.at(-1)[2].length, 3000);
+  const bad = JSON.stringify({ reason: 'spam', note: 'x' });
+  assert.equal((await post(bad, sign(bad))).status, 400);
+  assert.equal(rows.length, before + 1);
+});
+test('report: admin csv can filter to feedback', async () => {
+  const r = await report.fetch(new Request('https://r/admin/reports.csv?reason=feedback', { headers: { authorization: 'Bearer adm' } }), env);
+  assert.equal(r.status, 200);
+  assert.match(await r.text(), /^created,reason,note/);
+});
 test('report: oversize body refused whatever content-length says', async () => {
-  const b = JSON.stringify({ reason: 'other', note: 'x'.repeat(30000) });
+  const b = JSON.stringify({ reason: 'other', note: 'x'.repeat(40000) });
   assert.equal((await post(b, { ...sign(b), 'content-length': '10' })).status, 413);
 });
 test('report: rate limited -> 429', async () => {
