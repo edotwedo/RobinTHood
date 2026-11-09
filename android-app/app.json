@@ -6,11 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0a1a11",
+    "backgroundColor": "#0b0f19",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0a1a11"
+      "backgroundColor": "#0b0f19"
     },
     "android": {
       "package": "com.edotwedo.robinthood",

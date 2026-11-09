@@ -16,6 +16,9 @@
   </defs>
   <g transform="translate(512 512) scale(0.615) rotate(-45)" filter="url(#glow)">
     <rect x="-300" y="-28" width="480" height="56" rx="28" fill="url(#gold)"/>
+    <path d="M -292 -16 C -250 -78 -172 -72 -148 -16 L -166 -6 C -198 -48 -246 -50 -292 -16 Z" fill="url(#green)"/>
+    <path d="M -292 16 C -250 78 -172 72 -148 16 L -166 6 C -198 48 -246 50 -292 16 Z" fill="url(#green)"/>
+    <path d="M -308 -6 C -278 -42 -210 -36 -178 -4 L -192 0 C -224 -22 -270 -24 -308 -6 Z" fill="url(#gold)"/>
     <path d="M 168 -78 L 168 78 L 316 0 Z" fill="url(#green)"/>
   </g>
 </svg>

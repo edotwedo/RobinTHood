@@ -102,8 +102,9 @@ export default function SettingsModal({
 }) {
   const [ollamaStatus, setOllamaStatus] = useState('');
   const [vaultStatus, setVaultStatus] = useState('');
+  const lang = settings.lang;
 
-  const folderLabel = settings.filesUri ? (nameOf(settings.filesUri) || 'Chosen folder') : 'Choose a folder';
+  const folderLabel = settings.filesUri ? (nameOf(settings.filesUri) || t('setChosenFolder', lang)) : t('setChooseFolder', lang);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -117,7 +118,7 @@ export default function SettingsModal({
           </View>
 
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollBody}>
-            <Section title="Language">
+            <Section title={t('setLang', lang)}>
               <View style={styles.pillWrap}>
                 {SUPPORTED_LANGS.map((code) => {
                   const active = settings.lang === code;
@@ -134,10 +135,10 @@ export default function SettingsModal({
               </View>
             </Section>
 
-            <Section title="Assistant" note="How Robin answers, and what it is allowed to reach.">
+            <Section title={t('setAssistant', lang)} note={t('setAssistantNote', lang)}>
               <ToggleRow
-                label="Air-gapped mode"
-                hint="Disables web search and keeps every query on your own Ollama server — 100% offline."
+                label={t('setLocalOnly', lang)}
+                hint={t('setLocalOnlyHint', lang)}
                 value={settings.airGapped}
                 onToggle={() =>
                   setSettings((s) => {
@@ -153,31 +154,31 @@ export default function SettingsModal({
               />
             </Section>
 
-            <Section title="Models" note="Optional. Leave blank to use the free hosted models.">
+            <Section title={t('setModels', lang)} note={t('setModelsNote', lang)}>
               <Stack>
                 <Field
-                  label="Home Ollama URL"
+                  label={t('setOllamaUrl', lang)}
                   value={settings.ollamaUrl}
                   placeholder="http://my-pc.tailscale.net:11434"
                   onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))}
                 />
                 {/^http:\/\//i.test(settings.ollamaUrl) ? (
-                  <Text style={styles.inlineHint}>http:// is not encrypted. Fine over Tailscale or your home Wi-Fi, not the open internet.</Text>
+                  <Text style={styles.inlineHint}>{t('setHttpHint', lang)}</Text>
                 ) : null}
               </Stack>
               <Stack>
                 <Field
-                  label="Ollama model"
+                  label={t('setOllamaModel', lang)}
                   value={settings.ollamaModel}
                   placeholder="llama3.1"
                   onChange={(v) => setSettings((s) => ({ ...s, ollamaModel: v.trim() }))}
                 />
               </Stack>
               <Row
-                label="Find Ollama on this network"
-                hint={ollamaStatus || 'Scans your LAN for a running Ollama server.'}
+                label={t('setFindOllama', lang)}
+                hint={ollamaStatus || t('setFindOllamaHint', lang)}
                 onPress={async () => {
-                  setOllamaStatus('Searching LAN for Ollama…');
+                  setOllamaStatus(t('setSearchingLan', lang));
                   const found = await discoverOllamaLan(settings.ollamaUrl ? [settings.ollamaUrl] : []);
                   if (found) {
                     setSettings((s) => ({
@@ -185,19 +186,19 @@ export default function SettingsModal({
                       ollamaUrl: found.url,
                       ollamaModel: found.recommendedModel || s.ollamaModel || 'llama3.2',
                     }));
-                    setOllamaStatus(`Found ${found.url} (${found.recommendedModel})`);
+                    setOllamaStatus(`${t('setFoundOllama', lang)} ${found.url} (${found.recommendedModel})`);
                   } else {
-                    setOllamaStatus('No Ollama instance found on this network');
+                    setOllamaStatus(t('setNoOllama', lang));
                   }
                 }}
                 last
               />
             </Section>
 
-            <Section title="OpenRouter" note="Optional. Bring your own key for extra models.">
+            <Section title={t('setOpenRouter', lang)} note={t('setOpenRouterNote', lang)}>
               <Stack>
                 <Field
-                  label="API key"
+                  label={t('setApiKey', lang)}
                   value={settings.openRouterKey}
                   placeholder="sk-or-v1-…"
                   secure
@@ -206,7 +207,7 @@ export default function SettingsModal({
               </Stack>
               <Stack last>
                 <Field
-                  label="Model"
+                  label={t('setOrModel', lang)}
                   value={settings.openRouterModel}
                   placeholder="openrouter/free"
                   onChange={(v) => setSettings((s) => ({ ...s, openRouterModel: v.trim() }))}
@@ -214,20 +215,20 @@ export default function SettingsModal({
               </Stack>
             </Section>
 
-            <Section title="Files & notes" note="Robin reads and writes plain text and Markdown in one place you choose.">
+            <Section title={t('setFiles', lang)} note={t('setFilesNote', lang)}>
               {isIos ? (
-                <Row label="Robin's files" hint="In the Files app: On My iPhone, then RobinTHood." last />
+                <Row label={t('setIosFiles', lang)} hint={t('setIosFilesHint', lang)} last />
               ) : allFiles ? (
                 <Row
-                  label="Whole phone access"
-                  hint="Personal build. Files without a folder go to Documents/RobinTHood."
-                  value="On"
+                  label={t('setWholePhone', lang)}
+                  hint={t('setWholePhoneHint', lang)}
+                  value={t('setOn', lang)}
                   onPress={() => openAllFilesSetting(packageName).catch(() => {})}
                   last
                 />
               ) : (
                 <Row
-                  label="Robin's folder"
+                  label={t('setRobinFolder', lang)}
                   value={folderLabel}
                   onPress={async () => {
                     try {
@@ -239,23 +240,23 @@ export default function SettingsModal({
                 />
               )}
               <Row
-                label="Obsidian vault"
+                label={t('setObsidian', lang)}
                 value={
                   settings.obsidianVault
-                    ? (allFiles ? 'Documents/Obsidian' : (nameOf(settings.obsidianVault) || 'Connected'))
-                    : 'Not connected'
+                    ? (allFiles ? 'Documents/Obsidian' : (nameOf(settings.obsidianVault) || t('setConnected', lang)))
+                    : t('setNotConnected', lang)
                 }
-                hint={vaultStatus || 'Secrets from _vault_secrets.json or note frontmatter are shielded before sending.'}
+                hint={vaultStatus || t('setObsidianHint', lang)}
                 onPress={async () => {
                   try {
                     if (allFiles) {
                       setSettings((s) => ({ ...s, obsidianVault: 'Documents/Obsidian', filesUri: 'allfiles:Documents/Obsidian' }));
-                      setVaultStatus('Connected to Documents/Obsidian');
+                      setVaultStatus(t('setConnectedDocs', lang));
                     } else {
                       const uri = await pickFolder();
                       if (uri) {
                         setSettings((s) => ({ ...s, obsidianVault: uri, filesUri: uri }));
-                        setVaultStatus(`Connected: ${nameOf(uri) || 'Obsidian vault'}`);
+                        setVaultStatus(`${t('setConnectedPrefix', lang)} ${nameOf(uri) || t('setObsidian', lang)}`);
                       }
                     }
                   } catch {}
@@ -264,32 +265,32 @@ export default function SettingsModal({
               />
             </Section>
 
-            <Section title="Audio">
-              <Row label="Music volume" last>
+            <Section title={t('setAudio', lang)}>
+              <Row label={t('setMusicRow', lang)} last>
                 <Pills
-                  options={[['Quiet', 0.15], ['Normal', 0.3], ['Loud', 0.6]]}
+                  options={[[t('setQuiet', lang), 0.15], [t('setNormal', lang), 0.3], [t('setLoud', lang), 0.6]]}
                   value={settings.musicVolume}
                   onChange={(v) => setSettings((s) => ({ ...s, musicVolume: v, music: true }))}
                 />
               </Row>
             </Section>
 
-            <Section title="Privacy & data">
-              <Row label="Privacy and your data" onPress={onOpenPrivacy} last />
-              {!settings.isPro ? <Row label="Ad privacy choices" onPress={openAdPrivacyOptions} last /> : null}
+            <Section title={t('setPrivacySection', lang)}>
+              <Row label={t('setPrivacyRow', lang)} onPress={onOpenPrivacy} last />
+              {!settings.isPro ? <Row label={t('setAdPrivacy', lang)} onPress={openAdPrivacyOptions} last /> : null}
               <Row
-                label="Privacy policy"
+                label={t('setPolicy', lang)}
                 onPress={() => handleOpenSource('https://robinthood-search.phone-liaison.workers.dev/privacy')}
                 last
               />
             </Section>
 
             {__DEV__ ? (
-              <Section title="Developer">
+              <Section title={t('setDeveloper', lang)}>
                 <Row
-                  label="RobinTHood Pro (dev toggle)"
-                  hint="Turns the ads off. Testing only until Play Billing is set up."
-                  value={settings.isPro ? 'Active' : 'Off'}
+                  label={t('setProDev', lang)}
+                  hint={t('setProHint', lang)}
+                  value={settings.isPro ? t('setActive', lang) : t('setOff', lang)}
                   onPress={() => setSettings((s) => ({ ...s, isPro: !s.isPro }))}
                   last
                 />
@@ -297,14 +298,11 @@ export default function SettingsModal({
             ) : null}
 
             <Text style={styles.about}>
-              RobinTHood {Constants.expoConfig?.version}. When Web Search is on, queries go through our edge
-              infrastructure to live search providers (Brave Search, DuckDuckGo, Wikipedia) and the pages are read
-              there, never from your phone. Chat history and keys stay on this device. The free version shows Google
-              ads, and Google's ads SDK collects device identifiers, as the privacy policy explains.
+              RobinTHood {Constants.expoConfig?.version}. {t('setAbout', lang)}
             </Text>
 
             <Pressable style={styles.doneBtn} onPress={onClose}>
-              <Text style={styles.doneText}>Done</Text>
+              <Text style={styles.doneText}>{t('setDone', lang)}</Text>
             </Pressable>
             <View style={{ height: 24 }} />
           </ScrollView>
