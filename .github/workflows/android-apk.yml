@@ -209,6 +209,10 @@ jobs:
           $PYTHON_CMD -m venv "$RUNNER_TEMP/play-venv"
           VPY="$RUNNER_TEMP/play-venv/bin/python"; [ -x "$VPY" ] || VPY="$RUNNER_TEMP/play-venv/Scripts/python.exe"
           "$VPY" -m pip install --quiet google-api-python-client google-auth
+          # Ensure release notes are populated for Google Play
+          if [ ! -f "RELEASE_NOTES.txt" ] && [ ! -f "android-app/dist/release-notes.txt" ]; then
+            git log -1 --pretty=format:"%s%n%n%b" | head -c 500 > android-app/dist/release-notes.txt
+          fi
           PLAY_SERVICE_ACCOUNT_KEY=play_key.json "$VPY" scripts/play_status.py --deploy android-app/dist/RobinTHood-play.aab --track track001
 
   # iPhone: proves the native iOS app compiles (simulator build, no signing).

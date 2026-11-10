@@ -27,7 +27,7 @@ def app_version_code():
         return None
 
 
-def deploy_bundle(service, aab_path, track_name="track001"):
+def deploy_bundle(service, aab_path, track_name="track001", release_notes=None):
     if not os.path.exists(aab_path):
         print(f"Error: Bundle file not found at {aab_path}")
         sys.exit(1)
@@ -35,6 +35,18 @@ def deploy_bundle(service, aab_path, track_name="track001"):
     print(f"=== Deploying AAB to Google Play ({PACKAGE}) ===")
     print(f"Bundle file: {aab_path}")
     print(f"Target track: {track_name}")
+
+    if not release_notes:
+        for candidate in ["RELEASE_NOTES.txt", "android-app/dist/release-notes.txt", "android-app/RELEASE_NOTES.txt"]:
+            candidate_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", candidate)
+            if os.path.exists(candidate_path):
+                try:
+                    with open(candidate_path, "r", encoding="utf-8") as f:
+                        release_notes = f.read().strip()
+                        print(f"Loaded release notes from {candidate}")
+                        break
+                except Exception:
+                    pass
 
     edit = service.edits().insert(packageName=PACKAGE, body={}).execute()
     edit_id = edit["id"]
@@ -61,15 +73,22 @@ def deploy_bundle(service, aab_path, track_name="track001"):
         version_code = bundle_resp.get("versionCode")
         print(f"✓ Upload successful. Assigned versionCode: {version_code}")
 
+        release_entry = {
+            "name": f"{version_code}",
+            "versionCodes": [str(version_code)],
+            "status": "completed",
+        }
+        if release_notes and release_notes.strip():
+            release_entry["releaseNotes"] = [
+                {
+                    "language": "en-US",
+                    "text": release_notes.strip()[:500],
+                }
+            ]
+
         track_body = {
             "track": track_name,
-            "releases": [
-                {
-                    "name": f"{version_code}",
-                    "versionCodes": [str(version_code)],
-                    "status": "completed",
-                }
-            ],
+            "releases": [release_entry],
         }
         track_resp = service.edits().tracks().update(
             packageName=PACKAGE,
@@ -147,21 +166,57 @@ def query_status(service):
     print("\n✓ Query completed successfully.")
 
 
+def update_track_notes(service, track_name, notes):
+    """Update release notes on the current active release for a track."""
+    edit = service.edits().insert(packageName=PACKAGE, body={}).execute()
+    edit_id = edit["id"]
+    try:
+        track_data = service.edits().tracks().get(packageName=PACKAGE, editId=edit_id, track=track_name).execute()
+        releases = track_data.get("releases", [])
+        if not releases:
+            print(f"No releases found on track '{track_name}'")
+            return
+        active_rel = releases[0]
+        active_rel["releaseNotes"] = [
+            {
+                "language": "en-US",
+                "text": notes.strip()[:500]
+            }
+        ]
+        service.edits().tracks().update(packageName=PACKAGE, editId=edit_id, track=track_name, body={"track": track_name, "releases": [active_rel]}).execute()
+        service.edits().commit(packageName=PACKAGE, editId=edit_id).execute()
+        print(f"✓ Release notes updated on track '{track_name}' for release {active_rel.get('name') or active_rel.get('versionCodes')}")
+    finally:
+        try:
+            service.edits().delete(packageName=PACKAGE, editId=edit_id).execute()
+        except Exception:
+            pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Google Play Developer API CLI")
     parser.add_argument("--deploy", "--upload", dest="bundle_path", help="Path to .aab bundle file to upload and deploy")
     parser.add_argument("--track", default="track001", help="Target release track (default: track001)")
+    parser.add_argument("--notes", help="Release notes text for this release")
+    parser.add_argument("--notes-file", help="Path to file containing release notes")
     args = parser.parse_args()
 
     if not os.path.exists(KEY_FILE):
         print(f"Error: Service account key not found at {KEY_FILE}")
         sys.exit(1)
 
+    notes = args.notes
+    if args.notes_file and os.path.exists(args.notes_file):
+        with open(args.notes_file, "r", encoding="utf-8") as f:
+            notes = f.read().strip()
+
     creds = service_account.Credentials.from_service_account_file(KEY_FILE, scopes=SCOPES)
     service = build("androidpublisher", "v3", credentials=creds)
 
     if args.bundle_path:
-        deploy_bundle(service, args.bundle_path, track_name=args.track)
+        deploy_bundle(service, args.bundle_path, track_name=args.track, release_notes=notes)
+    elif notes:
+        update_track_notes(service, args.track, notes)
     else:
         query_status(service)
 
