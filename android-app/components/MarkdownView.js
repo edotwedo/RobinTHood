@@ -1,5 +1,7 @@
-import React from 'react';
-import { Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { copyToClipboard } from '../clipboard';
+import { lightTick } from '../haptics';
 import { parseBlocks, parseInline } from '../markdown';
 import { C } from '../theme';
 
@@ -32,6 +34,35 @@ export function Inline({ text, style }) {
 
 const HEADING_STYLES = [null, 'mdH1', 'mdH2', 'mdH3', 'mdH4', 'mdH4', 'mdH4'];
 
+export function CodeBlock({ block }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(block.text);
+    if (ok) {
+      lightTick();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <View style={styles.codeBlock}>
+      <View style={styles.codeHeader}>
+        <Text style={styles.codeLang}>{block.lang || 'code'}</Text>
+        <Pressable onPress={handleCopy} hitSlop={8} style={styles.codeCopyBtn}>
+          <Text style={[styles.codeCopyText, copied && { color: C.green }]}>
+            {copied ? '✓ Copied' : 'Copy'}
+          </Text>
+        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
+        <Text selectable style={styles.codeText}>{block.text}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 export function FormattedMessage({ text }) {
   if (!text) return null;
   const blocks = parseBlocks(text);
@@ -40,16 +71,7 @@ export function FormattedMessage({ text }) {
       {blocks.map((b, idx) => {
         switch (b.type) {
           case 'code':
-            return (
-              <View key={idx} style={styles.codeBlock}>
-                <View style={styles.codeHeader}>
-                  <Text style={styles.codeLang}>{b.lang || 'code'}</Text>
-                </View>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hScroll}>
-                  <Text selectable style={styles.codeText}>{b.text}</Text>
-                </ScrollView>
-              </View>
-            );
+            return <CodeBlock key={idx} block={b} />;
           case 'heading':
             return <Inline key={idx} text={b.text} style={[styles.msgText, styles[HEADING_STYLES[b.level]]]} />;
           case 'hr':
@@ -130,8 +152,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   codeLang: { color: C.faint, fontSize: 11, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  codeCopyBtn: { paddingVertical: 2, paddingHorizontal: 6, borderRadius: 4 },
+  codeCopyText: { color: C.dim, fontSize: 11, fontWeight: '600' },
   codeText: {
     color: '#e2e8f0',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',

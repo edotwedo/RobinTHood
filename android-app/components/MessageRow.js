@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { copyToClipboard } from '../clipboard';
 import { availableModels } from '../engines';
 import { splitFollowups } from '../followups';
+import { lightTick } from '../haptics';
 import { t } from '../i18n';
 import { markFor } from '../privacy';
 import { FormattedMessage } from './MarkdownView';
@@ -32,12 +34,24 @@ export default function MessageRow({
   status,
   onSuggest,
   streaming,
+  onRetry,
 }) {
   const mine = item.role === 'user';
   const [checkOpen, setCheckOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const lang = settings?.lang;
   const shown = mine ? item.content : splitFollowups(item.content).text;
   const chips = !mine && !streaming && !item.pending && !item.error && !item.intro ? (item.followups || []) : [];
+
+  const handleCopy = async () => {
+    const textToCopy = mine ? item.content : shown;
+    const ok = await copyToClipboard(textToCopy);
+    if (ok) {
+      lightTick();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <View style={[styles.msg, mine ? styles.userMsg : styles.botMsg]}>
@@ -48,11 +62,34 @@ export default function MessageRow({
             {markForLabel(item.model, settings)}
           </Text>
           {item.seconds ? <Text style={styles.latency}>{item.seconds.toFixed(1)}s</Text> : null}
-          {!item.intro && !item.pending && item.content ? (
-            <Pressable style={styles.reportBtn} hitSlop={10} onPress={() => openReport(item)}>
-              <Text style={styles.reportText}>{item.reported ? 'Reported' : '⚑ Report'}</Text>
-            </Pressable>
-          ) : null}
+          <View style={styles.headerActions}>
+            {!item.intro && !item.pending && item.content ? (
+              <>
+                <Pressable style={styles.actionBtn} hitSlop={8} onPress={handleCopy}>
+                  <Text style={[styles.actionBtnText, copied && { color: C.green }]}>
+                    {copied ? '✓ Copied' : '⧉ Copy'}
+                  </Text>
+                </Pressable>
+                {onRetry && !streaming ? (
+                  <Pressable style={styles.actionBtn} hitSlop={8} onPress={() => onRetry(item)}>
+                    <Text style={styles.actionBtnText}>↻ Retry</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable style={styles.actionBtn} hitSlop={8} onPress={() => openReport(item)}>
+                  <Text style={styles.actionBtnText}>{item.reported ? 'Reported' : '⚑ Report'}</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+        </View>
+      )}
+      {mine && (
+        <View style={styles.userActionRow}>
+          <Pressable style={styles.userCopyBtn} hitSlop={8} onPress={handleCopy}>
+            <Text style={[styles.userCopyText, copied && { color: C.green }]}>
+              {copied ? '✓ Copied' : '⧉'}
+            </Text>
+          </Pressable>
         </View>
       )}
 
@@ -209,6 +246,12 @@ const styles = StyleSheet.create({
   userMsg: { backgroundColor: C.user, alignSelf: 'flex-end', borderBottomRightRadius: 2 },
   botMsg: { backgroundColor: C.panel, alignSelf: 'flex-start', borderBottomLeftRadius: 2, borderWidth: 1, borderColor: C.line },
   msgHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 8 },
+  actionBtn: { paddingVertical: 2, paddingHorizontal: 4 },
+  actionBtnText: { fontSize: 11, color: C.faint, fontWeight: '500' },
+  userActionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
+  userCopyBtn: { paddingHorizontal: 4, paddingVertical: 2 },
+  userCopyText: { fontSize: 11, color: C.faint },
   reportBtn: { marginLeft: 'auto', paddingLeft: 12 },
   reportText: { fontSize: 11, color: C.faint },
   modelTag: { fontSize: 10, fontWeight: '700', color: C.green, textTransform: 'uppercase' },

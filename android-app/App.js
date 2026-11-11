@@ -26,6 +26,9 @@ import SettingsModal from './components/SettingsModal';
 import ModelPickerModal from './components/ModelPickerModal';
 import ReportModal from './components/ReportModal';
 import PrivacyScreen from './components/PrivacyScreen';
+import ChatHistoryModal from './components/ChatHistoryModal';
+import ZeroState from './components/ZeroState';
+import { lightTick, successTick } from './haptics';
 
 const ALL_FILES = Boolean(Constants.expoConfig?.extra?.allFiles);
 const PACKAGE = Constants.expoConfig?.android?.package || 'com.edotwedo.robinthood';
@@ -33,6 +36,8 @@ const PACKAGE = Constants.expoConfig?.android?.package || 'com.edotwedo.robintho
 const KEYS = {
   settings: '@robinthood_settings_v2',
   chat: '@robinthood_chat_v2',
+  sessions: '@robinthood_sessions_v1',
+  activeSessionId: '@robinthood_active_session_v1',
 };
 
 const DEFAULT_SETTINGS = {
@@ -92,7 +97,10 @@ function Chat() {
     [F.bold]: require('./assets/fonts/Poppins-Bold.ttf'),
   });
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [messages, setMessages] = useState([INTRO]);
+  const [messages, setMessages] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -170,14 +178,50 @@ function Chat() {
   useEffect(() => {
     (async () => {
       try {
-        const [s, c] = await Promise.all([AsyncStorage.getItem(KEYS.settings), AsyncStorage.getItem(KEYS.chat)]);
+        const [s, sessStr, legacyChat] = await Promise.all([
+          AsyncStorage.getItem(KEYS.settings),
+          AsyncStorage.getItem(KEYS.sessions),
+          AsyncStorage.getItem(KEYS.chat),
+        ]);
         if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s), ...(__DEV__ ? {} : { isPro: false }) });
-        if (c) {
-          const saved = JSON.parse(c);
-          if (Array.isArray(saved) && saved.length) {
-            setMessages(saved.map((m) => (m.id === 'intro' ? { ...m, content: INTRO.content } : m)));
-          }
+
+        let loadedSessions = [];
+        if (sessStr) {
+          try {
+            loadedSessions = JSON.parse(sessStr) || [];
+          } catch {}
         }
+        if (!loadedSessions.length && legacyChat) {
+          try {
+            const parsedLegacy = JSON.parse(legacyChat);
+            if (Array.isArray(parsedLegacy) && parsedLegacy.some((m) => m.role === 'user')) {
+              const firstUser = parsedLegacy.find((m) => m.role === 'user');
+              const title = firstUser?.content?.slice(0, 32).trim() || 'Previous Chat';
+              loadedSessions = [{
+                id: 'sess_' + Date.now(),
+                title,
+                updatedAt: Date.now(),
+                messages: parsedLegacy.filter((m) => !m.intro),
+              }];
+            }
+          } catch {}
+        }
+
+        const storedActiveId = await AsyncStorage.getItem(KEYS.activeSessionId);
+        let currentSess = loadedSessions.find((x) => x.id === storedActiveId) || loadedSessions[0];
+        if (!currentSess) {
+          currentSess = {
+            id: 'sess_' + Date.now(),
+            title: 'New Chat',
+            updatedAt: Date.now(),
+            messages: [],
+          };
+          loadedSessions = [currentSess];
+        }
+
+        setSessions(loadedSessions);
+        setActiveSessionId(currentSess.id);
+        setMessages((currentSess.messages || []).filter((m) => !m.intro));
       } catch {}
       setLoaded(true);
       flushReports().catch(() => {});
@@ -189,23 +233,48 @@ function Chat() {
   }, [settings, loaded]);
 
   useEffect(() => {
-    if (loaded && !busy) AsyncStorage.setItem(KEYS.chat, JSON.stringify(keepRecentImages(messages.slice(-200)))).catch(() => {});
-  }, [messages, loaded, busy]);
+    if (!loaded || !activeSessionId) return;
+    const cleanMsgs = keepRecentImages(messages.slice(-200));
+    setSessions((prev) => {
+      const idx = prev.findIndex((s) => s.id === activeSessionId);
+      let title = prev[idx]?.title;
+      const firstUserMsg = cleanMsgs.find((m) => m.role === 'user');
+      if (firstUserMsg && (!title || title === 'New Chat')) {
+        title = firstUserMsg.content.slice(0, 34).trim() + (firstUserMsg.content.length > 34 ? '…' : '');
+      }
+      const updated = {
+        id: activeSessionId,
+        title: title || 'New Chat',
+        updatedAt: Date.now(),
+        messages: cleanMsgs,
+      };
+      const nextSessions = idx >= 0
+        ? [...prev.slice(0, idx), updated, ...prev.slice(idx + 1)]
+        : [updated, ...prev];
+      if (!busy) {
+        AsyncStorage.setItem(KEYS.sessions, JSON.stringify(nextSessions)).catch(() => {});
+        AsyncStorage.setItem(KEYS.chat, JSON.stringify(cleanMsgs)).catch(() => {});
+      }
+      return nextSessions;
+    });
+  }, [messages, loaded, busy, activeSessionId]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
   const send = useCallback(async (override, opts = {}) => {
+    lightTick();
     const checked = typeof override === 'string';
     const text = (checked ? override : input).trim();
     const file = checked ? opts.file : attachment;
     if ((!text && !file) || busy) return;
     const collects = mayCollect(settings.selectedModel || 'auto');
 
+    let currentMessages = (opts.retryHistory || messages).filter((m) => !m.intro);
     const unseen = (m) => m.role === 'user' && !m.sharedStar;
     if (!checked && collects) {
-      const earlier = messages.filter(unseen).map((m) => m.content).join('\n');
+      const earlier = currentMessages.filter(unseen).map((m) => m.content).join('\n');
       const earlierFound = earlier ? detectSensitive(earlier) : [];
       const textFound = text ? detectSensitive(text) : [];
       const fileFound = (file && file.text) ? detectSensitive(file.text) : [];
@@ -216,8 +285,8 @@ function Chat() {
           'Looks like private info',
           `${where} seems to include: ${labelsOf(found)}. The model you're using (marked *) may collect messages, including earlier ones in this chat.`,
           [
-            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true, file: file?.kind === 'text' ? { ...file, text: maskSensitive(file.text).text } : file }) },
-            { text: 'Send anyway', style: 'destructive', onPress: () => send(text, { file }) },
+            { text: 'Mask it & send', onPress: () => send(maskSensitive(text).text, { maskEarlier: true, file: file?.kind === 'text' ? { ...file, text: maskSensitive(file.text).text } : file, retryHistory: opts.retryHistory }) },
+            { text: 'Send anyway', style: 'destructive', onPress: () => send(text, { file, retryHistory: opts.retryHistory }) },
             { text: 'Edit', style: 'cancel' },
           ],
         );
@@ -225,7 +294,7 @@ function Chat() {
       }
     }
 
-    let prior = messages;
+    let prior = currentMessages;
     if (opts.maskEarlier) prior = prior.map((m) => (unseen(m) ? { ...m, content: maskSensitive(m.content).text } : m));
     if (collects) prior = prior.map((m) => (unseen(m) ? { ...m, sharedStar: true } : m));
 
@@ -344,6 +413,7 @@ function Chat() {
           pending: false,
           thinking: undefined,
         });
+        successTick();
       } else {
         update({ content: result.text, model: 'error', error: true, pending: false, thinking: undefined });
       }
@@ -374,8 +444,76 @@ function Chat() {
 
   const newChat = () => {
     if (busy) stop();
+    lightTick();
     tokenMapRef.current = {};
-    setMessages([INTRO]);
+    const newSessId = 'sess_' + Date.now();
+    const newSess = {
+      id: newSessId,
+      title: 'New Chat',
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    setSessions((prev) => [newSess, ...prev]);
+    setActiveSessionId(newSessId);
+    setMessages([]);
+    AsyncStorage.setItem(KEYS.activeSessionId, newSessId).catch(() => {});
+  };
+
+  const handleSelectSession = (sess) => {
+    if (busy) stop();
+    lightTick();
+    tokenMapRef.current = {};
+    setActiveSessionId(sess.id);
+    setMessages((sess.messages || []).filter((m) => !m.intro));
+    AsyncStorage.setItem(KEYS.activeSessionId, sess.id).catch(() => {});
+  };
+
+  const handleDeleteSession = (sessId) => {
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== sessId);
+      AsyncStorage.setItem(KEYS.sessions, JSON.stringify(next)).catch(() => {});
+      if (sessId === activeSessionId) {
+        const fallback = next[0] || {
+          id: 'sess_' + Date.now(),
+          title: 'New Chat',
+          updatedAt: Date.now(),
+          messages: [],
+        };
+        setActiveSessionId(fallback.id);
+        setMessages((fallback.messages || []).filter((m) => !m.intro));
+        AsyncStorage.setItem(KEYS.activeSessionId, fallback.id).catch(() => {});
+        if (!next.length) return [fallback];
+      }
+      return next;
+    });
+  };
+
+  const handleClearAllSessions = () => {
+    const fresh = {
+      id: 'sess_' + Date.now(),
+      title: 'New Chat',
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    setSessions([fresh]);
+    setActiveSessionId(fresh.id);
+    setMessages([]);
+    AsyncStorage.setItem(KEYS.sessions, JSON.stringify([fresh])).catch(() => {});
+    AsyncStorage.setItem(KEYS.activeSessionId, fresh.id).catch(() => {});
+    AsyncStorage.removeItem(KEYS.chat).catch(() => {});
+  };
+
+  const handleRetry = (botMsg) => {
+    if (busy) return;
+    lightTick();
+    const botIdx = messages.findIndex((m) => m.id === botMsg.id);
+    if (botIdx < 0) return;
+    const precedingUser = [...messages.slice(0, botIdx)].reverse().find((m) => m.role === 'user');
+    if (!precedingUser) return;
+    const userIdx = messages.findIndex((m) => m.id === precedingUser.id);
+    const trimmed = messages.slice(0, userIdx + 1);
+    setMessages(trimmed);
+    send(precedingUser.content, { retryHistory: trimmed.slice(0, -1) });
   };
 
   const openReport = (item) => {
@@ -447,6 +585,9 @@ function Chat() {
         >
           <Text style={[styles.headerBtnText, settings.music && { color: '#fff' }]}>{settings.music ? '♪' : '♪̸'}</Text>
         </Pressable>
+        <Pressable onPress={() => setHistoryOpen(true)} style={styles.headerBtn} hitSlop={8}>
+          <Text style={styles.headerBtnText}>💬</Text>
+        </Pressable>
         <Pressable onPress={newChat} style={styles.headerBtn} hitSlop={8}>
           <Text style={styles.headerBtnText}>{t('newChat', settings.lang)}</Text>
         </Pressable>
@@ -460,6 +601,12 @@ function Chat() {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
+          ListEmptyComponent={
+            <ZeroState
+              onSelectPrompt={(p) => send(p)}
+              onOpenPrivacy={() => setPrivacyOpen(true)}
+            />
+          }
           renderItem={({ item }) => (
             <MessageRow
               item={item}
@@ -472,9 +619,14 @@ function Chat() {
               status={status}
               streaming={busy}
               onSuggest={(q) => setInput(q)}
+              onRetry={handleRetry}
             />
           )}
-          contentContainerStyle={[styles.chatContent, { paddingBottom: 16 }]}
+          contentContainerStyle={[
+            styles.chatContent,
+            messages.length === 0 && { flexGrow: 1, justifyContent: 'center' },
+            { paddingBottom: 16 }
+          ]}
           onContentSizeChange={scrollToEnd}
           keyboardShouldPersistTaps="handled"
         />
@@ -560,6 +712,17 @@ function Chat() {
         openAllFilesSetting={openAllFilesSetting}
         openAdPrivacyOptions={openAdPrivacyOptions}
         handleOpenSource={handleOpenSource}
+      />
+
+      <ChatHistoryModal
+        visible={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={handleSelectSession}
+        onNewChat={newChat}
+        onDeleteSession={handleDeleteSession}
+        onClearAll={handleClearAllSessions}
       />
     </View>
   );
