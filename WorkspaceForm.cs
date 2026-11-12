@@ -330,9 +330,9 @@ public sealed class WorkspaceForm : Form
     Form CreateSetupDialog()
     {
         var dialog = new Form { Text = "Welcome to RobinTHood", Size = new Size(760, 760), MinimumSize = new Size(650, 600), StartPosition = FormStartPosition.CenterParent, Font = Font, MinimizeBox = false, MaximizeBox = false };
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 8 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), ColumnCount = 1, RowCount = 10 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < 8; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        for (int i = 0; i < 10; i++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(new Label { Text = "Your ideas, ready when you are.", AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold) });
         layout.Controls.Add(new Label { Text = "Robin keeps your projects, conversations and documents together on this computer. No account. No cloud sync.\n\nLyrics, stories and art briefs are text documents; Robin doesn't create audio or image files yet.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 18, 0, 12) });
         layout.Controls.Add(new Label { Text = "Your workspace:\n" + store.Root + "\nYou can open its folder from any project.", AutoSize = true, MaximumSize = new Size(570, 0) });
@@ -340,7 +340,34 @@ public sealed class WorkspaceForm : Form
         var shortcut = new CheckBox { Text = "Put Robin on my desktop (keeps an app copy outside Downloads)", Checked = true, AutoSize = true, MaximumSize = new Size(560, 0) };
         layout.Controls.Add(online);
         layout.Controls.Add(shortcut);
-        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document and recent conversation are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent. A newer copy replaces this program file. Your projects and other files stay where they are.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
+        string chosenVault = settings.VaultPath;
+        var vaultLabel = new Label { AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 4) };
+        void ShowVault() => vaultLabel.Text = string.IsNullOrEmpty(chosenVault)
+            ? "Obsidian vault: none. Robin uses only this project."
+            : "Obsidian vault: " + chosenVault + "\nWhen you ask Robin, notes related to your request are sent too. Notes marked robin: private are never read. Values in _vault_secrets.json and secret frontmatter keys are hidden before sending.";
+        ShowVault();
+        var vaultButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+        var chooseVault = new Button { Text = "Choose vault folder…", AutoSize = true };
+        var clearVault = new Button { Text = "Don't use a vault", AutoSize = true };
+        chooseVault.Click += (_, _) =>
+        {
+            using var picker = new FolderBrowserDialog { Description = "Choose your Obsidian vault folder", UseDescriptionForTitle = true };
+            if (!string.IsNullOrEmpty(chosenVault) && Directory.Exists(chosenVault)) picker.InitialDirectory = chosenVault;
+            if (picker.ShowDialog(dialog) != DialogResult.OK) return;
+            if (!ObsidianVault.LooksLikeVault(picker.SelectedPath))
+            {
+                MessageBox.Show(dialog, "That folder has no notes (.md files). Choose the folder you open in Obsidian.", "Obsidian vault", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            chosenVault = picker.SelectedPath;
+            ShowVault();
+        };
+        clearVault.Click += (_, _) => { chosenVault = ""; ShowVault(); };
+        vaultButtons.Controls.Add(chooseVault);
+        vaultButtons.Controls.Add(clearVault);
+        layout.Controls.Add(vaultLabel);
+        layout.Controls.Add(vaultButtons);
+        layout.Controls.Add(new Label { Text = "Robin needs an internet connection to respond. Your request, current document, recent conversation and, if you choose a vault, related vault notes are sent to an AI service. Your projects stay on this computer, without cloud sync. You can write and reopen them with assistance switched off.\n\nWhen it opens, Robin asks GitHub whether a newer version exists. No project text is sent. A newer copy replaces this program file. Your projects and other files stay where they are.", AutoSize = true, MaximumSize = new Size(570, 0), Margin = new Padding(0, 12, 0, 12) });
         var done = ActionButton("Open my workspace");
         done.Click += (_, _) =>
         {
@@ -348,6 +375,7 @@ public sealed class WorkspaceForm : Form
             {
                 if (shortcut.Checked) DesktopSetup.CreateShortcut();
                 settings.OnlineAllowed = online.Checked;
+                settings.VaultPath = chosenVault;
                 settings.SetupComplete = true;
                 store.SaveSettings(settings);
                 dialog.DialogResult = DialogResult.OK;
@@ -525,7 +553,20 @@ public sealed class WorkspaceForm : Form
         bool update = mode.SelectedIndex == 1;
         if (update && !active.HasDocument) { status.Text = "Save a draft as your document first, or switch to Talk it through."; return; }
         string prompt;
-        try { prompt = ProjectContext.Build(active, document.Text, instruction, update); }
+        try
+        {
+            // Read the vault off the UI thread so a big vault can't freeze the window.
+            // Only the vault notes are shielded: the user's own document must round-trip unchanged,
+            // or "Update my document" would save [hidden] over their real text.
+            string vaultPath = settings.VaultPath, query = active.Name + " " + instruction;
+            string vaultNotes = await Task.Run(() =>
+            {
+                if (!ObsidianVault.LooksLikeVault(vaultPath)) return "";
+                var notes = ObsidianVault.FindRelevant(vaultPath, query);
+                return notes.Count == 0 ? "" : ObsidianVault.Shield(ObsidianVault.Format(notes), ObsidianVault.LoadSecrets(vaultPath));
+            });
+            prompt = ProjectContext.Build(active, document.Text, instruction, update, vaultNotes);
+        }
         catch (Exception ex) { ShowError(ex); return; }
         var project = active;
         string original = document.Text;
@@ -622,7 +663,7 @@ public sealed class WorkspaceForm : Form
     void UpdatePrivacy()
     {
         privacy.Text = settings.OnlineAllowed
-            ? "Saved on this computer · Ask Robin sends text online"
+            ? (string.IsNullOrEmpty(settings.VaultPath) ? "Saved on this computer · Ask Robin sends text online" : "Saved on this computer · Ask Robin sends text and related vault notes online")
             : "Saved on this computer · Writing assistance is off";
     }
 
