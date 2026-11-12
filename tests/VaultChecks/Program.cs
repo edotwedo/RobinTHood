@@ -56,6 +56,20 @@ static class Program
             Check(ObsidianVault.Format(Array.Empty<VaultNote>()) == "", "no notes adds nothing to the prompt");
             var (front, body) = ObsidianVault.SplitFrontmatter("---\r\na: b\r\n---\r\nhello");
             Check(front.Trim() == "a: b" && body == "hello", "Windows line endings in frontmatter are handled");
+
+            // Holes. These should fail until ObsidianVault.cs treats them as private or secret.
+            File.WriteAllText(Path.Combine(vault, "Quoted tag.md"), "---\ntags: [\"private\"]\n---\nharbor quoted tag");
+            File.WriteAllText(Path.Combine(vault, "Quoted block.md"), "---\ntags:\n  - \"private\"\n---\nharbor quoted block");
+            File.WriteAllText(Path.Combine(vault, "Commented.md"), "---\nprivate: true # keep out\n---\nharbor comment marker");
+            File.WriteAllText(Path.Combine(vault, "Flow key.md"), "---\napi_key: [sk-flow-aaaa, sk-flow-bbbb]\n---\nharbor setup. The key is sk-flow-aaaa here.");
+            var leaked = ObsidianVault.FindRelevant(vault, "Write a chorus about the harbor lights").Select(n => n.Title).ToList();
+            Check(!leaked.Contains("Quoted tag"), "a quoted flow tag [\"private\"] is never read");
+            Check(!leaked.Contains("Quoted block"), "a quoted block tag \"private\" is never read");
+            Check(!leaked.Contains("Commented"), "private: true with a trailing comment is never read");
+            string flowShield = ObsidianVault.Shield(
+                ObsidianVault.Format(ObsidianVault.FindRelevant(vault, "harbor setup")),
+                ObsidianVault.LoadSecrets(vault));
+            Check(!flowShield.Contains("sk-flow-aaaa"), "each key in an api_key flow list is hidden");
         }
         finally { try { Directory.Delete(vault, true); } catch { } }
         Console.WriteLine(failures == 0 ? "ALL PASS" : $"{failures} FAILED");
