@@ -14,6 +14,37 @@ To work with Robin, enable writing assistance in Setup and choose **Ask Robin**.
 
 **Project options → Export a copy…** saves a separate copy for use elsewhere. **Open project folder** shows where that project's files live.
 
+## Use your Obsidian vault
+
+Robin can use your own notes. In **Settings**, choose **Choose vault folder…** and pick the folder you open in Obsidian. When you ask Robin, the notes most related to your request are sent along with it, up to about 12,000 characters. **Don't use a vault** turns this off.
+
+What Robin never sends:
+
+- **Private notes.** A note with `robin: private` or `private: true` in its frontmatter, or a `private` tag, is never read.
+- **Frontmatter.** The block between the `---` lines at the top of a note stays on your computer.
+- **Secrets.** Values in `_vault_secrets.json` at the top of your vault, and values of frontmatter keys such as `password`, `token`, `api_key` or `pin`, are replaced with `[hidden]` in the notes Robin sends.
+- **Hidden folders.** `.obsidian`, `.trash`, `.git` and other folders starting with a dot are skipped.
+
+Your own document isn't changed. Secrets in it are sent as written, so keep them out of project documents.
+
+Example `_vault_secrets.json`:
+
+```json
+{
+  "wifi": "correct-horse-battery",
+  "bank pin": "4821"
+}
+```
+
+Example private note:
+
+```markdown
+---
+robin: private
+---
+Things Robin should never see.
+```
+
 ## Where your work goes
 
 Projects, documents, conversations and previous versions are stored on this PC under `%LOCALAPPDATA%\RobinTHood\Workspace`. There is no cloud sync. Back up that folder to keep another copy of your workspace. An exported document is a separate copy, not the complete project history.
