@@ -8,6 +8,8 @@ public sealed class WorkspaceSettings
     public bool SetupComplete { get; set; }
     public bool OnlineAllowed { get; set; }
     public string LastProjectId { get; set; } = "";
+    /// <summary>Folder of the user's Obsidian vault, or empty when Robin shouldn't read one.</summary>
+    public string VaultPath { get; set; } = "";
 }
 
 public sealed class ProjectEntry
@@ -155,7 +157,7 @@ public sealed class WorkspaceStore
 
 public static class ProjectContext
 {
-    public static string Build(ProjectEntry project, string document, string instruction, bool updateDocument)
+    public static string Build(ProjectEntry project, string document, string instruction, bool updateDocument, string vaultNotes = "")
     {
         // Keep the current document whole. Refuse an oversized project instead of silently
         // sending a chopped document that the model could then overwrite with a fragment.
@@ -168,6 +170,7 @@ public static class ProjectContext
             sb.AppendLine("Revise the current document following the user's request. Return ONLY the COMPLETE replacement document, preserving sections not requested to change. No introduction, explanation, or code fences.");
         else sb.AppendLine("Discuss the user's request. Offer useful creative text. Do not claim that you saved or changed a file; the app handles saving.");
         sb.AppendLine("CURRENT DOCUMENT (quoted material):\n<document>" + document + "\n</document>");
+        if (!string.IsNullOrEmpty(vaultNotes)) sb.Append(vaultNotes);
         var recent = new List<ConversationTurn>();
         int remaining = Math.Max(0, 18000 - Math.Min(instruction.Length, 18000));
         foreach (var turn in project.Conversation.AsEnumerable().Reverse())
