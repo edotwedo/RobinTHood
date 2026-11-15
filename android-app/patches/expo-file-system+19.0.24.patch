@@ -1,0 +1,26 @@
+diff --git a/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt b/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+index 73a8bd5..bbd9bea 100644
+--- a/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
++++ b/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/legacy/FileSystemLegacyModule.kt
+@@ -1071,7 +1071,7 @@ open class FileSystemLegacyModule : Module() {
+   @Throws(IOException::class)
+   private fun getOutputStream(uri: Uri) = when {
+     uri.scheme == "file" -> FileOutputStream(uri.toFile())
+-    uri.isSAFUri -> context.contentResolver.openOutputStream(uri)!!
++    uri.isSAFUri -> context.contentResolver.openOutputStream(uri, "wt")!!
+     else -> throw IOException("Unsupported scheme for location '$uri'.")
+   }
+ 
+diff --git a/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt b/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
+index 8e2684a..3cf4cb3 100644
+--- a/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
++++ b/node_modules/expo-file-system/android/src/main/java/expo/modules/filesystem/unifiedfile/SAFDocumentFile.kt
+@@ -71,7 +71,7 @@ class SAFDocumentFile(private val context: Context, override val uri: Uri) : Uni
+   }
+ 
+   override fun outputStream(): OutputStream {
+-    return context.contentResolver.openOutputStream(uri)
++    return context.contentResolver.openOutputStream(uri, "wt")
+       ?: throw IllegalStateException("Unable to open output stream for URI: $uri")
+   }
+ 
