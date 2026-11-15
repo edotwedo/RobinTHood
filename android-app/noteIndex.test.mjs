@@ -162,8 +162,22 @@ test('search hits carry vault links and backlinks', async () => {
   assert.equal(hit.file, 'Projects/Garden.md');
   assert.deepEqual(hit.links.sort(), ['budget', 'seeds']);
   assert.deepEqual(hit.linkedFrom.sort(), ['Journal', 'Seeds']);
-  assert.equal(noteKey('Projects/Garden.md'), 'garden');
+  assert.equal(noteKey('Projects/Garden.md'), 'projects/garden');
   await indexNote(db, 'Journal.md', 'No links now.');
   assert.deepEqual((await searchFts(db, 'tomatillos', 3))[0].linkedFrom, ['Seeds']);
   for (const f of ['Projects/Garden.md', 'Seeds.md', 'Journal.md']) await removeNote(db, f);
+});
+
+test('backlinks keep explicit paths and do not claim ambiguous bare links', async () => {
+  const db = await getNoteDb('test_notes_fts.db');
+  await indexNote(db, 'Personal/Budget.md', 'Personal budget: groceries quinoa.');
+  await indexNote(db, 'Work/Budget.md', 'Work budget: servers quinoa.');
+  await indexNote(db, 'Plan.md', 'See [[Work/Budget]] for costs.');
+  await indexNote(db, 'Loose.md', 'Something about [[Budget]].');
+  const hits = await searchFts(db, 'quinoa', 5);
+  const by = Object.fromEntries(hits.map((h) => [h.file, h]));
+  assert.deepEqual(by['Work/Budget.md'].linkedFrom, ['Plan']);
+  assert.deepEqual(by['Personal/Budget.md'].linkedFrom, []);
+  assert.deepEqual((await searchFts(db, 'costs', 1))[0].links, ['work/budget']);
+  for (const f of ['Personal/Budget.md', 'Work/Budget.md', 'Plan.md', 'Loose.md']) await removeNote(db, f);
 });

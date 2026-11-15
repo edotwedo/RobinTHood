@@ -270,10 +270,12 @@ export async function removeNote(adapter, file) {
   await adapter.run('DELETE FROM note_links WHERE file = ?', [file]);
 }
 
-// How Obsidian resolves [[Note]]: by note name, ignoring folders, the .md extension and case.
+// A link target or note file, normalised: lower case, no ".md", no leading slash. A link
+// with a folder ([[Work/Budget]]) keeps it; a bare link ([[Budget]]) is just the name.
 export function noteKey(name) {
-  return String(name || '').split('/').pop().replace(/\.md$/i, '').trim().toLowerCase();
+  return String(name || '').trim().replace(/^\/+/, '').replace(/\.md$/i, '').toLowerCase();
 }
+const baseKey = (key) => key.split('/').pop();
 
 export const MAX_LINKS = 5;
 
@@ -282,10 +284,19 @@ export const MAX_LINKS = 5;
 export async function linksFor(adapter, file, max = MAX_LINKS) {
   if (!adapter) return { links: [], linkedFrom: [] };
   const out = await adapter.all('SELECT target FROM note_links WHERE file = ? LIMIT ?', [file, max]);
-  const back = await adapter.all('SELECT DISTINCT file FROM note_links WHERE target = ? AND file != ? LIMIT ?', [noteKey(file), file, max]);
+  // Backlinks: links naming this note's full path, plus bare [[Name]] links, but the bare
+  // ones only when no other indexed note shares the name (an ambiguous link is not claimed).
+  const path = noteKey(file);
+  const name = baseKey(path);
+  const others = await adapter.all('SELECT file FROM notes_meta WHERE file != ?', [file]);
+  const nameIsUnique = !(others || []).some((r) => baseKey(noteKey(r.file)) === name);
+  const back = await adapter.all(
+    'SELECT DISTINCT file FROM note_links WHERE file != ? AND (target = ? OR (target = ? AND ?)) LIMIT ?',
+    [file, path, name, nameIsUnique ? 1 : 0, max]
+  );
   return {
     links: (out || []).map((r) => r.target),
-    linkedFrom: (back || []).map((r) => String(r.file).split('/').pop().replace(/\.md$/i, '')),
+    linkedFrom: (back || []).map((r) => String(r.file).replace(/\.md$/i, '')),
   };
 }
 
