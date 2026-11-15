@@ -1,7 +1,7 @@
 // node --test android-app/vault.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findEntry, isVault, walkTree } from './vault.js';
+import { findEntry, isVault, resolveEntry, walkTree } from './vault.js';
 
 // A fake folder tree: directories are objects, files are strings.
 const tree = {
@@ -51,4 +51,27 @@ test('findEntry: exact path, then basename, .md optional, [[link]] form', () => 
 test('isVault looks for .obsidian at the top level', () => {
   assert.equal(isVault(['.obsidian', 'a.md']), true);
   assert.equal(isVault(['a.md']), false);
+});
+
+test('findEntry: a folder path never falls back to a same-named note elsewhere', () => {
+  const entries = [{ name: 'Personal/Budget.md' }];
+  assert.equal(findEntry(entries, 'Missing/Budget.md'), undefined);
+  assert.equal(findEntry(entries, 'personal/budget').name, 'Personal/Budget.md');
+});
+
+test('resolveEntry: a bare name shared by several notes is ambiguous, not first-match', () => {
+  const entries = [{ name: 'Personal/Budget.md' }, { name: 'Work/Budget.md' }];
+  assert.equal(findEntry(entries, 'Budget'), undefined);
+  assert.deepEqual(resolveEntry(entries, '[[Budget]]').ambiguous, ['Personal/Budget.md', 'Work/Budget.md']);
+  assert.equal(findEntry(entries, 'Work/Budget').name, 'Work/Budget.md');
+});
+
+test('walkTree: dotted folders such as Project.v1 are walked, not treated as files', async () => {
+  const tree = { '/': ['Project.v1', 'a.md'], '/Project.v1/': ['plan.md'] };
+  const out = await walkTree('/', {
+    list: async (d) => tree[d].map((name) => ({ uri: d + name, name })),
+    isDir: async (e) => e.name === 'Project.v1',
+    childOf: (d, e) => d + e.name + '/',
+  });
+  assert.deepEqual(out.map((e) => e.name).sort(), ['Project.v1/plan.md', 'a.md']);
 });

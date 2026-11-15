@@ -8,7 +8,7 @@ import {
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
-import { findEntry, walkTree } from './vault.js';
+import { resolveEntry, walkTree } from './vault.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
 // Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
@@ -97,13 +97,23 @@ async function entries(dirUri) {
   });
 }
 
+// Resolves a READ/WRITE name against the folder's entries. A name with a folder is never
+// reduced to its bare name (that would hit a same-named note elsewhere). Several notes
+// sharing a bare name is an error that lists them, so the model can name the exact path.
+function lookup(all, name) {
+  let r = resolveEntry(all, name);
+  if (!r.entry && !r.ambiguous && !/[\\/]/.test(String(name || ''))) r = resolveEntry(all, cleanName(name));
+  if (r.ambiguous) throw new Error(`${name} matches several notes: ${r.ambiguous.slice(0, 5).join(', ')}. Use the full path`);
+  return r.entry;
+}
+
 export async function listFiles(dirUri) {
   return (await entries(dirUri)).map((e) => e.name).sort((a, b) => a.localeCompare(b));
 }
 
 export async function readFile(dirUri, name, maxChars = 12000) {
   const all = await entries(dirUri);
-  const hit = findEntry(all, name) || findEntry(all, cleanName(name));
+  const hit = lookup(all, name);
   if (!hit) throw new Error(`No file named ${name}`);
   checkReadable(hit.name, 0);
   // Size is not reported for every SAF provider; when it is missing, the type check stands alone.
@@ -116,13 +126,13 @@ export async function readFile(dirUri, name, maxChars = 12000) {
 // True when a WRITE of this name would replace a file in the folder.
 export async function fileExists(dirUri, name) {
   const all = await entries(dirUri);
-  return Boolean(findEntry(all, name) || findEntry(all, cleanName(name)));
+  return Boolean(lookup(all, name));
 }
 
 export async function writeFile(dirUri, name, content) {
   const fileName = cleanName(name);
   const all = await entries(dirUri);
-  const existing = findEntry(all, name) || findEntry(all, fileName);
+  const existing = lookup(all, name);
   let uri = existing?.uri;
   if (!uri && isPlainDir(dirUri)) uri = dirUri + encodeURIComponent(fileName);
   if (!uri) {

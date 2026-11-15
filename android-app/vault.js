@@ -8,6 +8,8 @@
 // Obsidian's own settings, the trash, and other dot-folders hold no notes for Robin.
 const SKIP_DIR = /^(\.|node_modules$)/;
 export const MAX_DEPTH = 6;
+// Extensions that mark a file without asking the provider (notes, attachments, Obsidian files).
+export const FILE_EXT = /\.(md|markdown|txt|csv|json|canvas|base|excalidraw|pdf|png|jpe?g|gif|webp|svg|heic|bmp|mp3|m4a|wav|ogg|flac|mp4|mov|webm|mkv|docx?|xlsx?|pptx?|odt|rtf|html?|xml|ya?ml|js|css|zip|epub)$/i;
 export const MAX_ENTRIES = 5000;
 
 // list(dir) -> [{ uri, name }] for one directory level (name = that level's bare name).
@@ -25,8 +27,9 @@ export async function walkTree(root, { list, isDir, childOf }, { maxDepth = MAX_
     }
     for (const e of level) {
       if (out.length >= maxEntries) break;
-      // Files almost always have an extension; only extension-less names cost a directory check.
-      const maybeDir = !/\.[a-z0-9]{1,8}$/i.test(e.name);
+      // Names with a known file extension skip the directory check (it costs a call per entry);
+      // anything else, including dotted folders such as "Project.v1", gets checked.
+      const maybeDir = !FILE_EXT.test(e.name);
       if (maybeDir && (await safeIsDir(isDir, e))) {
         if (depth + 1 < maxDepth && !SKIP_DIR.test(e.name)) {
           queue.push({ dir: childOf(dir, e), prefix: `${prefix}${e.name}/`, depth: depth + 1 });
@@ -50,17 +53,28 @@ async function safeIsDir(isDir, e) {
 
 const base = (p) => String(p).split('/').pop();
 
-// The entry a READ/WRITE name refers to: the exact relative path first, then a unique-enough
-// basename match (case-insensitive, ".md" optional, as in an Obsidian [[link]]).
+// The entry a READ/WRITE name refers to. A name with a folder ("Work/Budget.md") must match
+// that exact path (case-insensitive, ".md" optional); it never falls back to a note of the
+// same name in another folder, or a WRITE would overwrite the wrong note. A bare name
+// ("Budget", [[Budget]]) matches by note name, but only when exactly one note has it.
 export function findEntry(entries, name) {
+  const r = resolveEntry(entries, name);
+  return r.entry;
+}
+
+// { entry } for a single match, { ambiguous: [names] } when a bare name fits several notes,
+// {} when nothing fits.
+export function resolveEntry(entries, name) {
   const want = String(name || '').trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^\[\[|\]\]$/g, '').replace(/^\/+/, '');
-  if (!want) return undefined;
+  if (!want) return {};
   const lower = want.toLowerCase();
-  const withMd = /\.[a-z0-9]{1,8}$/i.test(lower) ? lower : `${lower}.md`;
-  return (
-    entries.find((e) => e.name.toLowerCase() === lower || e.name.toLowerCase() === withMd) ||
-    entries.find((e) => base(e.name).toLowerCase() === base(lower) || base(e.name).toLowerCase() === base(withMd))
-  );
+  const withMd = FILE_EXT.test(lower) ? lower : `${lower}.md`;
+  const exact = entries.find((e) => e.name.toLowerCase() === lower || e.name.toLowerCase() === withMd);
+  if (exact) return { entry: exact };
+  if (lower.includes('/')) return {};
+  const hits = entries.filter((e) => base(e.name).toLowerCase() === lower || base(e.name).toLowerCase() === withMd);
+  if (hits.length === 1) return { entry: hits[0] };
+  return hits.length > 1 ? { ambiguous: hits.map((e) => e.name) } : {};
 }
 
 // An Obsidian vault has a .obsidian settings folder at its top level.
