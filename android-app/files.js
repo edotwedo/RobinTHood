@@ -8,7 +8,7 @@ import {
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
-import { walkTree } from './vault.js';
+import { isVault, walkTree } from './vault.js';
 import { checkReadable, folderOps } from './folderOps.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
@@ -85,6 +85,19 @@ async function entries(dirUri) {
     isDir: async (e) => (await getInfoAsync(e.uri)).isDirectory,
     childOf: (_dir, e) => e.uri,
   });
+}
+
+// True when the folder's top level has .obsidian (cheap: one directory read, no walk).
+// Never throws, so a failed read just means "not a vault".
+export async function folderIsVault(dirUri) {
+  try {
+    const names = isPlainDir(dirUri)
+      ? await readDirectoryAsync(dirUri)
+      : (await SAF.readDirectoryAsync(dirUri)).map(nameOf);
+    return isVault(names);
+  } catch {
+    return false;
+  }
 }
 
 // The picked folder's read/write/append, through folderOps (path-preserving lookups).

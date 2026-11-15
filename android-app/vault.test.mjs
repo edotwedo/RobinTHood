@@ -1,7 +1,7 @@
 // node --test android-app/vault.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findEntry, isVault, resolveEntry, walkTree } from './vault.js';
+import { findEntry, isVault, resolveEntry, vaultActive, walkTree } from './vault.js';
 
 // A fake folder tree: directories are objects, files are strings.
 const tree = {
@@ -74,4 +74,15 @@ test('walkTree: dotted folders such as Project.v1 are walked, not treated as fil
     childOf: (d, e) => d + e.name + '/',
   });
   assert.deepEqual(out.map((e) => e.name).sort(), ['Project.v1/plan.md', 'a.md']);
+});
+
+test('vaultActive: All-files build uses the vault once connected', () => {
+  assert.equal(vaultActive({ obsidianVault: 'Documents/Obsidian', filesUri: 'x' }, true), true);
+  assert.equal(vaultActive({ obsidianVault: '' }, true), false);
+});
+
+test('vaultActive: picked folder must still be the vault', () => {
+  assert.equal(vaultActive({ obsidianVault: 'content://v', filesUri: 'content://v' }, false), true);
+  assert.equal(vaultActive({ obsidianVault: 'content://v', filesUri: 'content://other' }, false), false);
+  assert.equal(vaultActive(undefined, false), false);
 });

@@ -80,3 +80,8 @@ export function resolveEntry(entries, name) {
 
 // An Obsidian vault has a .obsidian settings folder at its top level.
 export const isVault = (topLevelNames) => topLevelNames.some((n) => n === '.obsidian');
+
+// Vault rules apply only while Robin's folder IS the vault: the All-files build always uses the
+// vault folder once connected; a picked (SAF) folder must still be the one the vault was set to.
+export const vaultActive = (settings, allFiles) =>
+  !!settings?.obsidianVault && (allFiles || settings.obsidianVault === settings.filesUri);
