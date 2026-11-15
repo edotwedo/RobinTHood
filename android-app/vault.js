@@ -8,7 +8,7 @@
 // Obsidian's own settings, the trash, and other dot-folders hold no notes for Robin.
 const SKIP_DIR = /^(\.|node_modules$)/;
 export const MAX_DEPTH = 6;
-// Extensions that mark a file without asking the provider (notes, attachments, Obsidian files).
+// Known file extensions; used only to decide whether a bare name needs ".md" added.
 export const FILE_EXT = /\.(md|markdown|txt|csv|json|canvas|base|excalidraw|pdf|png|jpe?g|gif|webp|svg|heic|bmp|mp3|m4a|wav|ogg|flac|mp4|mov|webm|mkv|docx?|xlsx?|pptx?|odt|rtf|html?|xml|ya?ml|js|css|zip|epub)$/i;
 export const MAX_ENTRIES = 5000;
 
@@ -25,12 +25,13 @@ export async function walkTree(root, { list, isDir, childOf }, { maxDepth = MAX_
     } catch {
       continue; // an unreadable subfolder hides only itself
     }
-    for (const e of level) {
+    // The provider's directory flag decides, never the name: a folder may be called
+    // "Project.v1" or even "Archive.md". Checks for one level run in parallel.
+    const dirFlags = await Promise.all(level.map((e) => safeIsDir(isDir, e)));
+    for (let i = 0; i < level.length; i++) {
+      const e = level[i];
       if (out.length >= maxEntries) break;
-      // Names with a known file extension skip the directory check (it costs a call per entry);
-      // anything else, including dotted folders such as "Project.v1", gets checked.
-      const maybeDir = !FILE_EXT.test(e.name);
-      if (maybeDir && (await safeIsDir(isDir, e))) {
+      if (dirFlags[i]) {
         if (depth + 1 < maxDepth && !SKIP_DIR.test(e.name)) {
           queue.push({ dir: childOf(dir, e), prefix: `${prefix}${e.name}/`, depth: depth + 1 });
         }

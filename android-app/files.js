@@ -8,7 +8,8 @@ import {
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
-import { resolveEntry, walkTree } from './vault.js';
+import { walkTree } from './vault.js';
+import { checkReadable, folderOps } from './folderOps.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
 // Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
@@ -25,17 +26,6 @@ const MIME = {
   md: 'text/markdown', txt: 'text/plain', csv: 'text/csv', json: 'application/json',
   html: 'text/html', htm: 'text/html', js: 'text/javascript', xml: 'text/xml',
 };
-
-// READ hands text to the model, so it refuses what can't be text and anything big enough
-// to run the phone out of memory when loaded into a string (the cut to 12 000 chars
-// comes after the whole file is read).
-const MAX_READ_BYTES = 1000000;
-const BINARY_EXT = /\.(zip|gz|tgz|7z|rar|tar|apk|aab|jar|exe|dll|so|bin|iso|img|dmg|pdf|docx?|xlsx?|pptx?|odt|jpe?g|png|gif|webp|heic|bmp|tiff?|mp3|m4a|aac|ogg|opus|wav|flac|mp4|m4v|mkv|webm|mov|avi|3gp|db|sqlite|realm)$/i;
-
-function checkReadable(name, size) {
-  if (BINARY_EXT.test(String(name).trim())) throw new Error(`${name} is not a text file, so Robin can't read it`);
-  if (size > MAX_READ_BYTES) throw new Error(`${name} is ${Math.round(size / 1000)} kB; Robin only reads text files up to ${MAX_READ_BYTES / 1000} kB`);
-}
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i;
 // Photos are shrunk on the phone before sending: about 100-200 kB, plenty for a model to read.
@@ -97,69 +87,28 @@ async function entries(dirUri) {
   });
 }
 
-// Resolves a READ/WRITE name against the folder's entries. A name with a folder is never
-// reduced to its bare name (that would hit a same-named note elsewhere). Several notes
-// sharing a bare name is an error that lists them, so the model can name the exact path.
-function lookup(all, name) {
-  let r = resolveEntry(all, name);
-  if (!r.entry && !r.ambiguous && !/[\\/]/.test(String(name || ''))) r = resolveEntry(all, cleanName(name));
-  if (r.ambiguous) throw new Error(`${name} matches several notes: ${r.ambiguous.slice(0, 5).join(', ')}. Use the full path`);
-  return r.entry;
-}
-
-export async function listFiles(dirUri) {
-  return (await entries(dirUri)).map((e) => e.name).sort((a, b) => a.localeCompare(b));
-}
-
-export async function readFile(dirUri, name, maxChars = 12000) {
-  const all = await entries(dirUri);
-  const hit = lookup(all, name);
-  if (!hit) throw new Error(`No file named ${name}`);
-  checkReadable(hit.name, 0);
-  // Size is not reported for every SAF provider; when it is missing, the type check stands alone.
-  const info = await getInfoAsync(hit.uri).catch(() => ({}));
-  checkReadable(hit.name, info.size || 0);
-  const text = await readAsStringAsync(hit.uri);
-  return truncateFileContent(text, maxChars);
-}
-
-// True when a WRITE of this name would replace a file in the folder.
-export async function fileExists(dirUri, name) {
-  const all = await entries(dirUri);
-  return Boolean(lookup(all, name));
-}
-
-export async function writeFile(dirUri, name, content) {
-  const fileName = cleanName(name);
-  const all = await entries(dirUri);
-  const existing = lookup(all, name);
-  let uri = existing?.uri;
-  // A new note with a folder ("New/Idea.md") is created at the top level as "Idea.md"; if that
-  // name is already taken there, stop rather than overwrite a note the user never named.
-  if (!uri && all.some((e) => e.name.toLowerCase() === fileName.toLowerCase())) {
-    throw new Error(`${fileName} already exists at the top of the folder. Use that name to replace it, or pick another name`);
-  }
-  if (!uri && isPlainDir(dirUri)) uri = dirUri + encodeURIComponent(fileName);
-  if (!uri) {
-    const ext = fileName.split('.').pop().toLowerCase();
-    uri = await SAF.createFileAsync(dirUri, fileName, MIME[ext] || 'application/octet-stream');
-  }
-  await writeAsStringAsync(uri, content);
-  return { name: existing?.name || (isPlainDir(dirUri) ? fileName : nameOf(uri) || fileName), chars: content.length, replaced: Boolean(existing) };
-}
-
-export async function appendFile(dirUri, name, content) {
-  const fileName = cleanName(name);
-  return appendVia(
-    {
-      exists: (n) => fileExists(dirUri, n),
-      read: (n, max) => readFile(dirUri, n, max),
-      write: (n, text) => writeFile(dirUri, n, text),
+// The picked folder's read/write/append, through folderOps (path-preserving lookups).
+function opsFor(dirUri) {
+  return folderOps({
+    entries: () => entries(dirUri),
+    size: async (uri) => (await getInfoAsync(uri)).size || 0,
+    readText: (uri) => readAsStringAsync(uri),
+    writeText: (uri, text) => writeAsStringAsync(uri, text),
+    create: async (fileName) => {
+      if (isPlainDir(dirUri)) return { uri: dirUri + encodeURIComponent(fileName), name: fileName };
+      const ext = fileName.split('.').pop().toLowerCase();
+      const uri = await SAF.createFileAsync(dirUri, fileName, MIME[ext] || 'application/octet-stream');
+      return { uri, name: nameOf(uri) || fileName };
     },
-    fileName,
-    content
-  );
+  });
 }
+
+export const listFiles = (dirUri) => opsFor(dirUri).list();
+export const readFile = (dirUri, name, maxChars = 12000) => opsFor(dirUri).read(name, maxChars);
+// True when a WRITE of this name would replace a file in the folder.
+export const fileExists = (dirUri, name) => opsFor(dirUri).exists(name);
+export const writeFile = (dirUri, name, content) => opsFor(dirUri).write(name, content);
+export const appendFile = (dirUri, name, content) => opsFor(dirUri).append(name, content);
 
 export async function searchLocalFiles(dirUri, query, maxHits = 6) {
   const q = String(query || '').trim();
@@ -370,7 +319,7 @@ export function createFolderStore(getFolder) {
     async write(path, content) {
       const dir = await getFolder();
       const res = await writeFile(dir, path, content);
-      getNoteDb().then((db) => db && indexNote(db, cleanName(path), content)).catch(() => {});
+      getNoteDb().then((db) => db && indexNote(db, res.name, content)).catch(() => {});
       return res;
     },
     async append(path, content) {
@@ -379,8 +328,8 @@ export function createFolderStore(getFolder) {
       getNoteDb().then(async (db) => {
         if (db) {
           try {
-            const full = await readFile(dir, path, Infinity);
-            await indexNote(db, cleanName(path), full);
+            const full = await readFile(dir, res.name, Infinity);
+            await indexNote(db, res.name, full);
           } catch {}
         }
       }).catch(() => {});
