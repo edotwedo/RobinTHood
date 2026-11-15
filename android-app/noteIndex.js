@@ -1,3 +1,4 @@
+import { parseNoteMeta } from './noteMeta.js';
 // On-device SQLite FTS5 note search engine.
 // Provides sub-millisecond, BM25-ranked full-text search across Markdown notes
 // without loading files into context or paying token costs.
@@ -175,7 +176,22 @@ export async function getNoteDb(dbPath = 'robin_notes_fts.db') {
       body,
       tokenize = 'porter unicode61'
     );
+    CREATE TABLE IF NOT EXISTS note_links (
+      file TEXT,
+      target TEXT
+    );
+    CREATE INDEX IF NOT EXISTS note_links_target ON note_links(target);
+    CREATE INDEX IF NOT EXISTS note_links_file ON note_links(file);
   `);
+  // v1 added note_links: forget what was indexed so the next sync re-reads every note once
+  // and fills in its links (rows indexed before then have none).
+  try {
+    const [v] = (await adapter.all('PRAGMA user_version')) || [];
+    if (!(Number(v?.user_version) >= 1)) {
+      await adapter.run('DELETE FROM notes_meta');
+      await adapter.exec('PRAGMA user_version = 1');
+    }
+  } catch {}
 
   _dbInstance = adapter;
   return _dbInstance;
@@ -193,6 +209,10 @@ export async function indexNote(adapter, file, text, mtime = Date.now(), len) {
       'INSERT INTO notes_fts(file, line, heading, body) VALUES (?, ?, ?, ?)',
       [file, chunk.line, chunk.heading || '', chunk.body]
     );
+  }
+  await adapter.run('DELETE FROM note_links WHERE file = ?', [file]);
+  for (const target of new Set(parseNoteMeta(cleanText).links.map(noteKey))) {
+    if (target) await adapter.run('INSERT INTO note_links(file, target) VALUES (?, ?)', [file, target]);
   }
   await adapter.run(
     'INSERT OR REPLACE INTO notes_meta(file, len, updated_at) VALUES (?, ?, ?)',
@@ -247,6 +267,37 @@ export async function removeNote(adapter, file) {
   if (!adapter) return;
   await adapter.run('DELETE FROM notes_fts WHERE file = ?', [file]);
   await adapter.run('DELETE FROM notes_meta WHERE file = ?', [file]);
+  await adapter.run('DELETE FROM note_links WHERE file = ?', [file]);
+}
+
+// A link target or note file, normalised: lower case, no ".md", no leading slash. A link
+// with a folder ([[Work/Budget]]) keeps it; a bare link ([[Budget]]) is just the name.
+export function noteKey(name) {
+  return String(name || '').trim().replace(/^\/+/, '').replace(/\.md$/i, '').toLowerCase();
+}
+const baseKey = (key) => key.split('/').pop();
+
+export const MAX_LINKS = 5;
+
+// The notes a hit links to, and the notes that link to it, as display names ([[name]] form).
+// Lets Robin follow a vault's links from a search hit without a second search.
+export async function linksFor(adapter, file, max = MAX_LINKS) {
+  if (!adapter) return { links: [], linkedFrom: [] };
+  const out = await adapter.all('SELECT target FROM note_links WHERE file = ? LIMIT ?', [file, max]);
+  // Backlinks: links naming this note's full path, plus bare [[Name]] links, but the bare
+  // ones only when no other indexed note shares the name (an ambiguous link is not claimed).
+  const path = noteKey(file);
+  const name = baseKey(path);
+  const others = await adapter.all('SELECT file FROM notes_meta WHERE file != ?', [file]);
+  const nameIsUnique = !(others || []).some((r) => baseKey(noteKey(r.file)) === name);
+  const back = await adapter.all(
+    'SELECT DISTINCT file FROM note_links WHERE file != ? AND (target = ? OR (target = ? AND ?)) LIMIT ?',
+    [file, path, name, nameIsUnique ? 1 : 0, max]
+  );
+  return {
+    links: (out || []).map((r) => r.target),
+    linkedFrom: (back || []).map((r) => String(r.file).replace(/\.md$/i, '')),
+  };
 }
 
 export async function searchFts(adapter, query, maxHits = 6) {
@@ -263,11 +314,20 @@ export async function searchFts(adapter, query, maxHits = 6) {
     [safeQuery, maxHits]
   );
 
-  return (rows || []).map((r) => ({
-    file: r.file,
-    line: Number(r.line) || 1,
-    heading: r.heading || '',
-    snippet: r.snippet || (r.body ? r.body.slice(0, 200) : ''),
-    rank: r.rank,
-  }));
+  const linkCache = new Map();
+  const hits = [];
+  for (const r of rows || []) {
+    if (!linkCache.has(r.file)) {
+      try { linkCache.set(r.file, await linksFor(adapter, r.file)); } catch { linkCache.set(r.file, { links: [], linkedFrom: [] }); }
+    }
+    hits.push({
+      file: r.file,
+      line: Number(r.line) || 1,
+      heading: r.heading || '',
+      snippet: r.snippet || (r.body ? r.body.slice(0, 200) : ''),
+      rank: r.rank,
+      ...linkCache.get(r.file),
+    });
+  }
+  return hits;
 }

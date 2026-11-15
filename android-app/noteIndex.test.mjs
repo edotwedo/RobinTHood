@@ -1,7 +1,7 @@
 // node --test android-app/noteIndex.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, removeNote, searchFts, syncNoteIndex, RESCAN_MS } from './noteIndex.js';
+import { sanitizeFts5Query, chunkMarkdown, getNoteDb, indexNote, noteKey, removeNote, searchFts, syncNoteIndex, RESCAN_MS } from './noteIndex.js';
 
 test('sanitizeFts5Query safely tokenizes and protects against FTS syntax errors', () => {
   assert.equal(sanitizeFts5Query(''), '');
@@ -151,4 +151,33 @@ test('syncNoteIndex indexes the whole note, not a 12k-truncated read', async () 
   await syncNoteIndex(db, ['sync44c.md'], async () => ({ mtime: 5000 }), async () => long);
   assert.deepEqual((await searchFts(db, 'rambutan')).map((h) => h.file), ['sync44c.md']);
   await removeNote(db, 'sync44c.md');
+});
+
+test('search hits carry vault links and backlinks', async () => {
+  const db = await getNoteDb('test_notes_fts.db');
+  await indexNote(db, 'Projects/Garden.md', '# Garden\nPlant tomatillos in May. See [[Seeds]] and [[Budget|money]].');
+  await indexNote(db, 'Seeds.md', '# Seeds\nOrdered from the co-op. Back to [[garden]].');
+  await indexNote(db, 'Journal.md', 'Talked about the [[Garden#Beds]] today.');
+  const [hit] = await searchFts(db, 'tomatillos', 3);
+  assert.equal(hit.file, 'Projects/Garden.md');
+  assert.deepEqual(hit.links.sort(), ['budget', 'seeds']);
+  assert.deepEqual(hit.linkedFrom.sort(), ['Journal', 'Seeds']);
+  assert.equal(noteKey('Projects/Garden.md'), 'projects/garden');
+  await indexNote(db, 'Journal.md', 'No links now.');
+  assert.deepEqual((await searchFts(db, 'tomatillos', 3))[0].linkedFrom, ['Seeds']);
+  for (const f of ['Projects/Garden.md', 'Seeds.md', 'Journal.md']) await removeNote(db, f);
+});
+
+test('backlinks keep explicit paths and do not claim ambiguous bare links', async () => {
+  const db = await getNoteDb('test_notes_fts.db');
+  await indexNote(db, 'Personal/Budget.md', 'Personal budget: groceries quinoa.');
+  await indexNote(db, 'Work/Budget.md', 'Work budget: servers quinoa.');
+  await indexNote(db, 'Plan.md', 'See [[Work/Budget]] for costs.');
+  await indexNote(db, 'Loose.md', 'Something about [[Budget]].');
+  const hits = await searchFts(db, 'quinoa', 5);
+  const by = Object.fromEntries(hits.map((h) => [h.file, h]));
+  assert.deepEqual(by['Work/Budget.md'].linkedFrom, ['Plan']);
+  assert.deepEqual(by['Personal/Budget.md'].linkedFrom, []);
+  assert.deepEqual((await searchFts(db, 'costs', 1))[0].links, ['work/budget']);
+  for (const f of ['Personal/Budget.md', 'Work/Budget.md', 'Plan.md', 'Loose.md']) await removeNote(db, f);
 });
