@@ -31,9 +31,10 @@ Unlike passive chat apps that lock your data in proprietary clouds, RobinTHood w
 • **Multi-Language Support**: Complete fluid responses in English, Spanish, French, German, Portuguese, Japanese, Chinese, and Hindi.
 
 ### Privacy & Data Transparency
-• **Local Storage**: Your files and vaults remain stored locally on your device in the folders you authorize. RobinTHood does not run a cloud server that stores your notes or chats.
+• **Local Storage**: Your files and vaults remain stored locally on your device in the folders you authorize. Chats and notes are never stored on developer cloud servers. The only data stored by the developer is user-submitted issue reports sent via the in-app Report button (question, answer, chosen reason, optional note, and random install ID stored in Cloudflare D1 for developer review).
 • **Prompt & Context Transmission**: When you chat or ask Robin to analyze a note, the prompt and relevant retrieved text excerpts are transmitted to your selected AI provider (e.g. OVHcloud, Kilo) to generate the answer.
-• **Air-Gapped LAN Mode**: For complete privacy with zero remote AI transmission, configure Home Ollama to run inference entirely on your local home server.
+• **Air-Gapped Mode**: For zero remote AI transmission, enable Air-Gapped mode with Home Ollama so queries execute entirely on your private local network with all cloud fallbacks strictly blocked.
+• **Data Deletion**: Users may request deletion of submitted problem reports at any time by contacting aroundrobin@protonmail.com with the approximate date and wording.
 • **Transparent Ads**: The free app is supported by standard non-intrusive banner ads.
 
 ---
@@ -88,14 +89,14 @@ Unlike passive chat apps that lock your data in proprietary clouds, RobinTHood w
 
 **Data Safety Form Summary**:
 - **Data Encrypted in Transit**: Yes (HTTPS for all remote models and search workers; optional home Ollama handles its own transport).
-- **Deletion Request**: No central account database exists; reports are retained ephemerally. Answer "No".
+- **Deletion Request**: Yes. Users can request deletion of submitted problem reports by emailing aroundrobin@protonmail.com with the approximate date and wording (stored in Cloudflare D1 for quality reviews; no accounts or chat logs exist).
 
 | Data type | Collected / shared | Purpose | Notes |
 |---|---|---|---|
 | Messages → Other in-app messages | Shared | App functionality | Prompts and retrieved note context are sent ephemerally to the selected AI service (OVHcloud, Kilo, or custom key). Not stored by developer. |
 | Photos and videos → Photos | Shared | App functionality | Only photos the user attaches, sent to the AI service for vision processing. |
 | Files and docs | Shared | App functionality | Only note text/files the user authorizes Robin to read as query context, sent ephemerally to the AI service. |
-| App activity → User reports | Collected | Developer communications | When user taps Report: reply, question, reason, version, and random install ID. |
+| App activity → User reports | Collected | Developer communications | When user taps Report: reply, question, reason, version, and random install ID stored in Cloudflare D1; deletable upon request. |
 | Device or other IDs | Collected and shared | Advertising | Standard Google Mobile Ads SDK (advertising ID). |
 | Location → Approximate | Collected and shared | Advertising | Google Mobile Ads SDK (inferred from IP). |
 | App info and performance → Diagnostics | Collected and shared | Advertising, analytics | Google Mobile Ads SDK crash and diagnostic reports. |

@@ -177,17 +177,17 @@ def generate_screenshots():
             "filename": "screenshot-4-sovereignty-engines.png",
             "banner_tag": "KEYLESS SOVEREIGNTY",
             "headline": "Zero Signups • BYO Home Ollama",
-            "subhead": "Cascade through top open models or route through your own local server",
+            "subhead": "Air-Gapped mode locks prompts to your local network with zero cloud fallback",
             "user_prompt": "Set active inference provider to Home Ollama server.",
             "action_badges": [
-                ("⚙️ Engine Switched: Ollama LAN (http://192.168.1.100:11434)", (3, 105, 161)),
-                ("🔒 Air-Gapped Mode: Prompts stay on private network", (5, 150, 105))
+                ("⚙️ Home Ollama (http://192.168.1.100:11434)", (3, 105, 161)),
+                ("🔒 Air-Gapped Mode: Zero external AI fallback", (5, 150, 105))
             ],
             "agent_response": (
                 "Connected to local Ollama instance:\n\n"
                 "• **Active Model**: `llama3.3:70b-instruct-q4_K_M`\n"
                 "• **Latency**: 14ms (Local Wi-Fi)\n"
-                "• **Privacy Status**: 100% On-Device / Local LAN\n\n"
+                "• **Mode**: Air-Gapped (zero external cloud fallback)\n\n"
                 "Robin is ready. All vault queries, web summaries, and thoughts will execute entirely through your home server without touching cloud AI providers."
             )
         }
