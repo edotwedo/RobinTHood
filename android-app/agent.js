@@ -41,10 +41,22 @@ const ALL_FILE_TOOLS =
   'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line.\n' +
   'APPEND: <path>  -- add text to the end of a text file (or create it if missing). Put the text on the lines after APPEND.\n';
 
-export function toolPrompt({ web, allFiles, hasTokens }) {
+// Extra rules when Robin's folder is an Obsidian vault: the user's notes are the first source
+// for anything about them, answers cite the notes, and new notes match Obsidian's conventions.
+export const VAULT_RULES =
+  'The folder is the user\'s Obsidian vault (their personal notes). ' +
+  'Before answering a question about the user, their life, plans, projects, people or past notes, use SEARCH FILES first, ' +
+  'then READ the best matching notes. Cite notes you used as [[Note name]] (file name without .md). ' +
+  'If nothing in the vault matches, say so plainly. ' +
+  'When you WRITE a new note, give it a .md name and start it with frontmatter:\n' +
+  '---\ncreated: YYYY-MM-DD\ntags: [tag1, tag2]\n---\n' +
+  'and link related notes with [[Note name]]. Never overwrite an existing note unless the user asks; use APPEND to add to one.\n';
+
+export function toolPrompt({ web, allFiles, hasTokens, vault }) {
   return (
     'You can take real actions through the RobinTHood app:\n' +
     (web ? WEB_TOOLS : '') + (allFiles ? ALL_FILE_TOOLS : FILE_TOOLS) +
+    (vault ? VAULT_RULES : '') +
     'To take an action, reply with ONLY that action (the single line, plus the contents for WRITE) and nothing else. ' +
     'The app does it and sends you the result; then take another action or give your final answer. ' +
     `Up to ${MAX_STEPS} actions per message.\n` +
@@ -214,7 +226,7 @@ export async function actAndAnswer({ history, settings, signal, onEvent, ctx }) 
     return m;
   });
   let hasTokens = Object.keys(tokenMap).length > 0 || Object.keys(customEntities).length > 0;
-  const messages = buildMessages(tokenizedHistory, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles, hasTokens }));
+  const messages = buildMessages(tokenizedHistory, null, toolPrompt({ web: ctx.web, allFiles: ctx.allFiles, hasTokens, vault: ctx.vault }));
   const state = {
     settings, ctx, store, chosen: settings.selectedModel || 'auto', order: engineOrder(settings, { vision: hasImage(messages) }), engineIndex: 0,
     webTurns: new Set(), fallbackOk: false, fallbackDeclined: false, mask: false,

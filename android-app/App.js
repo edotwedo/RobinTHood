@@ -13,7 +13,8 @@ import { useFonts } from 'expo-font';
 import { availableModels, labelFor } from './engines';
 import { actAndAnswer } from './agent';
 import { flushReports, submitReport } from './report';
-import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder, pickAttachment } from './files';
+import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFilesSetting, pickFolder, pickAttachment, folderIsVault } from './files';
+import { vaultActive } from './vault.js';
 import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
@@ -330,6 +331,7 @@ function Chat() {
         ctx: {
           web: activeSettings.webSearch,
           allFiles: ALL_FILES,
+          vault: vaultActive(activeSettings, ALL_FILES),
           defaultFolder: effectiveFolder,
           tokenMap: tokenMapRef.current,
           lang: activeSettings.lang || 'en',
@@ -344,8 +346,9 @@ function Chat() {
             if (settingsRef.current.filesUri) return settingsRef.current.filesUri;
             setStatus('Pick a folder for Robin\'s files…');
             const uri = await pickFolder();
-            setSettings((s) => ({ ...s, filesUri: uri }));
-            settingsRef.current = { ...settingsRef.current, filesUri: uri };
+            const vaultUri = (await folderIsVault(uri)) ? uri : settingsRef.current.obsidianVault;
+            setSettings((s) => ({ ...s, filesUri: uri, obsidianVault: vaultUri }));
+            settingsRef.current = { ...settingsRef.current, filesUri: uri, obsidianVault: vaultUri };
             return uri;
           },
           confirm: (action) => {
