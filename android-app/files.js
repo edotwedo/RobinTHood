@@ -8,6 +8,7 @@ import {
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
+import { findEntry, walkTree } from './vault.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
 // Documents/RobinTHood folder, which shows up in the iPhone Files app (On My iPhone > RobinTHood).
@@ -79,13 +80,21 @@ export async function pickFolder() {
   return res.directoryUri;
 }
 
+// Every file under the folder, subfolders included (an Obsidian vault nests notes), named by
+// path relative to the folder. Dot-folders such as .obsidian and .trash are skipped (vault.js).
 async function entries(dirUri) {
   if (isPlainDir(dirUri)) {
-    const names = await readDirectoryAsync(dirUri);
-    return names.map((name) => ({ uri: dirUri + encodeURIComponent(name), name }));
+    return walkTree(dirUri, {
+      list: async (dir) => (await readDirectoryAsync(dir)).map((name) => ({ uri: dir + encodeURIComponent(name), name })),
+      isDir: async (e) => (await getInfoAsync(e.uri)).isDirectory,
+      childOf: (_dir, e) => e.uri + '/',
+    });
   }
-  const uris = await SAF.readDirectoryAsync(dirUri);
-  return uris.map((uri) => ({ uri, name: nameOf(uri) }));
+  return walkTree(dirUri, {
+    list: async (dir) => (await SAF.readDirectoryAsync(dir)).map((uri) => ({ uri, name: nameOf(uri) })),
+    isDir: async (e) => (await getInfoAsync(e.uri)).isDirectory,
+    childOf: (_dir, e) => e.uri,
+  });
 }
 
 export async function listFiles(dirUri) {
@@ -93,8 +102,8 @@ export async function listFiles(dirUri) {
 }
 
 export async function readFile(dirUri, name, maxChars = 12000) {
-  const want = cleanName(name).toLowerCase();
-  const hit = (await entries(dirUri)).find((e) => e.name.toLowerCase() === want || e.name.toLowerCase() === String(name).trim().toLowerCase());
+  const all = await entries(dirUri);
+  const hit = findEntry(all, name) || findEntry(all, cleanName(name));
   if (!hit) throw new Error(`No file named ${name}`);
   checkReadable(hit.name, 0);
   // Size is not reported for every SAF provider; when it is missing, the type check stands alone.
@@ -106,13 +115,14 @@ export async function readFile(dirUri, name, maxChars = 12000) {
 
 // True when a WRITE of this name would replace a file in the folder.
 export async function fileExists(dirUri, name) {
-  const fileName = cleanName(name).toLowerCase();
-  return (await entries(dirUri)).some((e) => e.name.toLowerCase() === fileName);
+  const all = await entries(dirUri);
+  return Boolean(findEntry(all, name) || findEntry(all, cleanName(name)));
 }
 
 export async function writeFile(dirUri, name, content) {
   const fileName = cleanName(name);
-  const existing = (await entries(dirUri)).find((e) => e.name.toLowerCase() === fileName.toLowerCase());
+  const all = await entries(dirUri);
+  const existing = findEntry(all, name) || findEntry(all, fileName);
   let uri = existing?.uri;
   if (!uri && isPlainDir(dirUri)) uri = dirUri + encodeURIComponent(fileName);
   if (!uri) {
@@ -120,7 +130,7 @@ export async function writeFile(dirUri, name, content) {
     uri = await SAF.createFileAsync(dirUri, fileName, MIME[ext] || 'application/octet-stream');
   }
   await writeAsStringAsync(uri, content);
-  return { name: isPlainDir(dirUri) ? fileName : nameOf(uri) || fileName, chars: content.length, replaced: Boolean(existing) };
+  return { name: existing?.name || (isPlainDir(dirUri) ? fileName : nameOf(uri) || fileName), chars: content.length, replaced: Boolean(existing) };
 }
 
 export async function appendFile(dirUri, name, content) {
@@ -139,13 +149,14 @@ export async function appendFile(dirUri, name, content) {
 export async function searchLocalFiles(dirUri, query, maxHits = 6) {
   const q = String(query || '').trim();
   if (!q) return [];
-  const allNames = await listFiles(dirUri);
+  const all = await entries(dirUri);
+  const allNames = all.map((e) => e.name).sort((x, y) => x.localeCompare(y));
   try {
     const db = await getNoteDb();
     if (db) {
       // One listing for the whole sync; reads are full-length (no 12k cut) so the index
       // holds the whole note.
-      const byName = new Map((await entries(dirUri)).map((e) => [e.name, e.uri]));
+      const byName = new Map(all.map((e) => [e.name, e.uri]));
       const sizes = new Map();
       await syncNoteIndex(
         db,
@@ -170,10 +181,11 @@ export async function searchLocalFiles(dirUri, query, maxHits = 6) {
 
   const lowerQ = q.toLowerCase();
   const hits = [];
-  for (const name of allNames) {
+  for (const { name, uri } of all) {
     if (!/\.(md|txt|markdown|csv)$/i.test(name)) continue;
     try {
-      const text = await readFile(dirUri, name);
+      checkReadable(name, 0);
+      const text = truncateFileContent(await readAsStringAsync(uri), 12000);
       const lines = text.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
