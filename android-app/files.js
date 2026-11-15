@@ -8,7 +8,7 @@ import {
 } from 'expo-file-system/legacy';
 import { getNoteDb, indexNote, searchFts, syncNoteIndex } from './noteIndex.js';
 import { parseVaultSecrets } from './privacy.js';
-import { isVault, walkTree } from './vault.js';
+import { isVault, safTreeHooks, walkTree } from './vault.js';
 import { checkReadable, folderOps } from './folderOps.js';
 
 // iPhone: no folder picker or all-files access. Robin's files live in the app's own
@@ -80,11 +80,7 @@ async function entries(dirUri) {
       childOf: (_dir, e) => e.uri + '/',
     });
   }
-  return walkTree(dirUri, {
-    list: async (dir) => (await SAF.readDirectoryAsync(dir)).map((uri) => ({ uri, name: nameOf(uri) })),
-    isDir: async (e) => (await getInfoAsync(e.uri)).isDirectory,
-    childOf: (_dir, e) => e.uri,
-  });
+  return walkTree(dirUri, safTreeHooks((uri) => SAF.readDirectoryAsync(uri), nameOf));
 }
 
 // True when the folder's top level has .obsidian (cheap: one directory read, no walk).
