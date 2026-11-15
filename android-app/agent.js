@@ -41,6 +41,13 @@ const ALL_FILE_TOOLS =
   'WRITE: <path>  -- create or overwrite a text file. Put the complete contents on the lines after the WRITE line.\n' +
   'APPEND: <path>  -- add text to the end of a text file (or create it if missing). Put the text on the lines after APPEND.\n';
 
+// Vault links on a search hit, so the model can READ a linked note next.
+export function linkLine(h) {
+  const fmt = (xs) => xs.map((x) => `[[${x}]]`).join(', ');
+  return (h.links?.length ? `\nLinks to: ${fmt(h.links)}` : '') +
+    (h.linkedFrom?.length ? `\nLinked from: ${fmt(h.linkedFrom)}` : '');
+}
+
 export function toolPrompt({ web, allFiles, hasTokens }) {
   return (
     'You can take real actions through the RobinTHood app:\n' +
@@ -123,7 +130,7 @@ async function runAction(action, ctx, store) {
     case 'SEARCH_FILES': {
       const hits = await store.search(action.arg);
       if (!hits.length) return { text: `No matches found for "${action.arg}" in your notes.` };
-      const formatted = hits.map((h, i) => `[${i + 1}] ${h.file} (line ${h.line}${h.heading ? ', #' + h.heading : ''}):\n${h.snippet}`).join('\n\n');
+      const formatted = hits.map((h, i) => `[${i + 1}] ${h.file} (line ${h.line}${h.heading ? ', #' + h.heading : ''}):\n${h.snippet}${linkLine(h)}`).join('\n\n');
       return { text: `Matches for "${action.arg}" in your notes:\n\n${wrapFile(formatted)}` };
     }
     case 'LIST': {
