@@ -49,3 +49,21 @@ test('engineOrder strictly restricts to local ollama when air-gapped', () => {
   assert.equal(normal[0], 'ovh-120b');
   assert.ok(normal.length > 1);
 });
+
+// PLAN 1.1 check: without the user's OK, a model with no * never reaches a * engine.
+// (agent.js fallbackAllowed blocks a step down unless confirmFallback says yes.)
+const reachableWithoutConsent = (settings) =>
+  engineOrder(settings).filter((id) => !fallbackNeedsConsent(settings.selectedModel || 'auto', id));
+
+test('chosen ovh-120b never yields a kilo-* engine without consent; Auto does', () => {
+  const keys = { ollamaUrl: 'http://192.168.1.5:11434', openRouterKey: 'k' };
+  const chosen = reachableWithoutConsent({ ...keys, selectedModel: 'ovh-120b' });
+  assert.ok(chosen.includes('ovh-120b'));
+  assert.equal(chosen.some((id) => id.startsWith('kilo-') || id === 'openrouter'), false);
+  const auto = reachableWithoutConsent({ ...keys, selectedModel: 'auto' });
+  assert.ok(auto.some((id) => id.startsWith('kilo-')));
+});
+
+test('chosen ollama stays home without consent', () => {
+  assert.deepEqual(reachableWithoutConsent({ selectedModel: 'ollama', ollamaUrl: 'http://10.0.0.2:11434' }), ['ollama']);
+});

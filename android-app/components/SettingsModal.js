@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C, F } from '../theme';
-import { nameOf, pickFolder } from '../files';
+import { folderIsVault, nameOf, pickFolder } from '../files';
 import { discoverOllamaLan } from '../ollamaDiscovery';
 import { FEEDBACK_MAX, submitFeedback } from '../report';
 
@@ -282,7 +282,8 @@ export default function SettingsModal({
                   onPress={async () => {
                     try {
                       const uri = await pickFolder();
-                      setSettings((s) => ({ ...s, filesUri: uri }));
+                      const vault = await folderIsVault(uri);
+                      setSettings((s) => ({ ...s, filesUri: uri, ...(vault ? { obsidianVault: uri } : {}) }));
                     } catch {}
                   }}
                   last
