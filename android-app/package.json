@@ -38,5 +38,14 @@
   "private": true,
   "devDependencies": {
     "patch-package": "8.0.0"
+  },
+  "expo": {
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-file-system"
+        ]
+      }
+    }
   }
 }
