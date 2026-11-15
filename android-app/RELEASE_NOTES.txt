@@ -1,6 +1,4 @@
-RobinTHood 0.8.11:
-• Conversation History: multi-chat support with auto-titling, search, and switching
-• 1-Tap Copy: dedicated Copy buttons on code blocks and assistant messages
-• Response Retry: re-roll or retry assistant responses with 1 tap
-• Interactive Zero-State: quick prompt starter cards for explaining, writing, web research & coding
-• Tactile Haptics: subtle haptic feedback on sends, generation finish, and copy actions
+RobinTHood 0.8.12:
+• Obsidian vault folders: pick your vault so Robin can read notes in subfolders (skips .obsidian and .trash).
+• Vault-aware answers: Robin searches your notes before personal answers and cites sources like [[Note]].
+• Links and backlinks: Robin follows links between notes, finds related notes, and can write new notes with [[links]] and tags.
