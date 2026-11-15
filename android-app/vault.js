@@ -52,6 +52,30 @@ async function safeIsDir(isDir, e) {
   }
 }
 
+// walkTree hooks for an Android SAF tree. The legacy getInfoAsync reports isDirectory:false for
+// every content:// URI, so it cannot tell folders from files. A folder is instead whatever
+// readDir (SAF.readDirectoryAsync, which checks DocumentFile.isDirectory) can list; that
+// listing is kept, so walking into the folder costs no second read.
+export function safTreeHooks(readDir, nameOf) {
+  const listed = new Map();
+  return {
+    list: async (dir) => {
+      const uris = listed.has(dir) ? listed.get(dir) : await readDir(dir);
+      listed.delete(dir);
+      return uris.map((uri) => ({ uri, name: nameOf(uri) }));
+    },
+    isDir: async (e) => {
+      try {
+        listed.set(e.uri, await readDir(e.uri));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    childOf: (_dir, e) => e.uri,
+  };
+}
+
 const base = (p) => String(p).split('/').pop();
 
 // The entry a READ/WRITE name refers to. A name with a folder ("Work/Budget.md") must match

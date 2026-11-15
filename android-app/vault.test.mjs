@@ -1,7 +1,7 @@
 // node --test android-app/vault.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findEntry, isVault, resolveEntry, vaultActive, walkTree } from './vault.js';
+import { findEntry, isVault, resolveEntry, safTreeHooks, vaultActive, walkTree } from './vault.js';
 
 // A fake folder tree: directories are objects, files are strings.
 const tree = {
@@ -85,4 +85,28 @@ test('vaultActive: picked folder must still be the vault', () => {
   assert.equal(vaultActive({ obsidianVault: 'content://v', filesUri: 'content://v' }, false), true);
   assert.equal(vaultActive({ obsidianVault: 'content://v', filesUri: 'content://other' }, false), false);
   assert.equal(vaultActive(undefined, false), false);
+});
+
+test('safTreeHooks: folders are found by listing them, not by getInfo (which says false on SAF)', async () => {
+  // content:// style tree: a folder URI lists its children; a file URI throws, as SAF does.
+  const tree = {
+    'tree:root': ['tree:root/Work', 'tree:root/Personal', 'tree:root/Archive.md', 'tree:root/Project.v1', 'tree:root/Inbox.md', 'tree:root/.obsidian'],
+    'tree:root/Work': ['tree:root/Work/Budget.md'],
+    'tree:root/Personal': ['tree:root/Personal/Budget.md'],
+    'tree:root/Archive.md': ['tree:root/Archive.md/old.md'],
+    'tree:root/Project.v1': ['tree:root/Project.v1/plan.md'],
+    'tree:root/.obsidian': ['tree:root/.obsidian/app.json'],
+  };
+  let reads = 0;
+  const readDir = async (uri) => {
+    reads++;
+    if (!tree[uri]) throw new Error('not a directory');
+    return tree[uri];
+  };
+  const out = await walkTree('tree:root', safTreeHooks(readDir, (u) => u.split('/').pop()));
+  assert.deepEqual(out.map((e) => e.name).sort(),
+    ['Archive.md/old.md', 'Inbox.md', 'Personal/Budget.md', 'Project.v1/plan.md', 'Work/Budget.md']);
+  assert.equal(findEntry(out, 'Work/Budget.md').uri, 'tree:root/Work/Budget.md');
+  // root + 6 top-level checks + 4 files inside walked folders; a folder is never listed twice
+  assert.equal(reads, 1 + 6 + 4);
 });
