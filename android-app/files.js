@@ -134,6 +134,11 @@ export async function writeFile(dirUri, name, content) {
   const all = await entries(dirUri);
   const existing = lookup(all, name);
   let uri = existing?.uri;
+  // A new note with a folder ("New/Idea.md") is created at the top level as "Idea.md"; if that
+  // name is already taken there, stop rather than overwrite a note the user never named.
+  if (!uri && all.some((e) => e.name.toLowerCase() === fileName.toLowerCase())) {
+    throw new Error(`${fileName} already exists at the top of the folder. Use that name to replace it, or pick another name`);
+  }
   if (!uri && isPlainDir(dirUri)) uri = dirUri + encodeURIComponent(fileName);
   if (!uri) {
     const ext = fileName.split('.').pop().toLowerCase();
