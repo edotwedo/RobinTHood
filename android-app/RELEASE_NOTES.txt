@@ -1,3 +1,7 @@
+Upcoming fixes (not released):
+• Ollama setup now checks the server address and explains connection failures. Use a server origin such as http://192.168.1.10:11434; reverse-proxy paths such as https://host/ollama are not supported.
+• Music volume controls are visible again. Moving the slider above zero starts music; zero mutes it.
+
 RobinTHood 0.8.12:
 • Obsidian vault folders: pick your vault so Robin can read notes in subfolders (skips .obsidian and .trash).
 • Vault-aware answers: Robin searches your notes before personal answers and cites sources like [[Note]].
