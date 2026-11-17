@@ -1,3 +1,5 @@
+import { fetchOllama, normalizeOllamaUrl } from './ollamaConnection.js';
+
 /**
  * LAN Ollama auto-discovery and health check.
  * Searches common local/LAN endpoints for running Ollama instances
@@ -6,29 +8,30 @@
 
 export async function checkOllamaEndpoint(baseUrl, timeoutMs = 2000) {
   if (!baseUrl) return null;
-  const clean = baseUrl.replace(/\/+$/, '');
+  let clean;
+  try { clean = normalizeOllamaUrl(baseUrl); } catch { return null; }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
   try {
-    const res = await fetch(`${clean}/api/tags`, {
+    const res = await fetchOllama(fetch, clean, '/api/tags', {
       method: 'GET',
       signal: ctrl.signal,
       headers: { Accept: 'application/json' },
     });
-    clearTimeout(timer);
-    if (!res.ok) return null;
 
     const data = await res.json();
-    const models = Array.isArray(data?.models) ? data.models.map((m) => m.name || m.model).filter(Boolean) : [];
+    if (!Array.isArray(data?.models)) return null;
+    const models = Array.isArray(data?.models) ? data.models.map((m) => m?.name || m?.model).filter((name) => typeof name === 'string' && name.length > 0) : [];
     return {
       url: clean,
       models,
       recommendedModel: models[0] || 'llama3.2',
     };
   } catch {
-    clearTimeout(timer);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

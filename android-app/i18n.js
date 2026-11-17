@@ -81,6 +81,11 @@ export const STRINGS = {
     setOllamaUrl: 'Home Ollama URL',
     setHttpHint: 'http:// is not encrypted. Fine over Tailscale or your home Wi-Fi, not the open internet.',
     setOllamaModel: 'Ollama model',
+    setCheckOllama: 'Check this Ollama address',
+    setCheckingOllama: 'Checking your server…',
+    setOllamaReady: 'Connected. Installed models:',
+    setOllamaNoModels: 'Connected, but no models are installed. Install a model on your Ollama server first.',
+    setOllamaUnreachable: 'Cannot reach Ollama at this address. Check the address, keep Ollama running, and connect your phone to the same network or VPN.',
     setFindOllama: 'Find Ollama on this network',
     setFindOllamaHint: 'Scans your LAN for a running Ollama server.',
     setSearchingLan: 'Searching LAN for Ollama…',
@@ -224,6 +229,12 @@ export const STRINGS = {
     privacyTierHighBody: "What you share could cause real harm if it leaked. Use a model with no * or your own Ollama server, keep names and numbers out, and avoid pasting full documents or messages.",
   },
   es: {
+    setCheckOllama: "Comprobar esta dirección de Ollama",
+    setCheckingOllama: "Comprobando el servidor…",
+    setOllamaReady: "Conectado. Modelos instalados:",
+    setOllamaNoModels: "Conectado, pero no hay modelos. Instala un modelo en tu servidor Ollama.",
+    setOllamaUnreachable: "No se puede conectar a Ollama. Revisa la dirección, mantén Ollama abierto y conecta el teléfono a la misma red o VPN.",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 Web',
     musicOn: '♪',
@@ -398,6 +409,12 @@ export const STRINGS = {
     privacyTierHighBody: "Lo que compartes podría causar un daño real si se filtrara. Usa un modelo sin * o tu propio servidor Ollama, deja fuera nombres y números, y evita pegar documentos o mensajes completos.",
   },
   fr: {
+    setCheckOllama: "Vérifier cette adresse Ollama",
+    setCheckingOllama: "Vérification du serveur…",
+    setOllamaReady: "Connecté. Modèles installés :",
+    setOllamaNoModels: "Connecté, mais aucun modèle installé. Installez un modèle sur votre serveur Ollama.",
+    setOllamaUnreachable: "Connexion à Ollama impossible. Vérifiez l’adresse, laissez Ollama ouvert et connectez le téléphone au même réseau ou VPN.",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 Web',
     musicOn: '♪',
@@ -572,6 +589,12 @@ export const STRINGS = {
     privacyTierHighBody: "Ce que vous partagez pourrait causer un vrai tort s'il fuyait. Utilisez un modèle sans * ou votre propre serveur Ollama, laissez de côté les noms et les numéros, et évitez de coller des documents ou des messages entiers.",
   },
   de: {
+    setCheckOllama: "Diese Ollama-Adresse prüfen",
+    setCheckingOllama: "Server wird geprüft…",
+    setOllamaReady: "Verbunden. Installierte Modelle:",
+    setOllamaNoModels: "Verbunden, aber keine Modelle installiert. Installiere ein Modell auf deinem Ollama-Server.",
+    setOllamaUnreachable: "Ollama ist nicht erreichbar. Prüfe die Adresse, lasse Ollama laufen und verbinde das Telefon mit demselben Netzwerk oder VPN.",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 Web',
     musicOn: '♪',
@@ -746,6 +769,12 @@ export const STRINGS = {
     privacyTierHighBody: "Was Sie teilen, könnte bei einem Leak echten Schaden anrichten. Nutzen Sie ein Modell ohne * oder Ihren eigenen Ollama-Server, lassen Sie Namen und Nummern weg und fügen Sie keine ganzen Dokumente oder Nachrichten ein.",
   },
   pt: {
+    setCheckOllama: "Verificar este endereço do Ollama",
+    setCheckingOllama: "Verificando o servidor…",
+    setOllamaReady: "Conectado. Modelos instalados:",
+    setOllamaNoModels: "Conectado, mas sem modelos instalados. Instale um modelo no servidor Ollama.",
+    setOllamaUnreachable: "Não foi possível acessar o Ollama. Confira o endereço, mantenha o Ollama aberto e conecte o telefone à mesma rede ou VPN.",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 Web',
     musicOn: '♪',
@@ -920,6 +949,12 @@ export const STRINGS = {
     privacyTierHighBody: "O que você compartilha poderia causar um dano real se vazasse. Use um modelo sem * ou o seu próprio servidor Ollama, deixe nomes e números de fora e evite colar documentos ou mensagens inteiras.",
   },
   ja: {
+    setCheckOllama: "このOllamaアドレスを確認",
+    setCheckingOllama: "サーバーを確認中…",
+    setOllamaReady: "接続済み。インストール済みモデル：",
+    setOllamaNoModels: "接続できましたがモデルがありません。Ollamaサーバーにモデルをインストールしてください。",
+    setOllamaUnreachable: "Ollamaに接続できません。アドレスを確認し、Ollamaを起動して、スマートフォンを同じネットワークまたはVPNに接続してください。",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 ウェブ',
     musicOn: '♪',
@@ -1094,6 +1129,12 @@ export const STRINGS = {
     privacyTierHighBody: "共有した内容が漏れると、実害になり得ます。* のないモデルか自分のOllamaサーバーを使い、名前と番号は外し、文書やメッセージの全文は貼らないでください。",
   },
   zh: {
+    setCheckOllama: "检查此 Ollama 地址",
+    setCheckingOllama: "正在检查服务器…",
+    setOllamaReady: "已连接。已安装的模型：",
+    setOllamaNoModels: "已连接，但未安装模型。请先在 Ollama 服务器上安装模型。",
+    setOllamaUnreachable: "无法连接 Ollama。请检查地址，保持 Ollama 运行，并将手机连接到同一网络或 VPN。",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 联网',
     musicOn: '♪',
@@ -1268,6 +1309,12 @@ export const STRINGS = {
     privacyTierHighBody: "你分享的内容如果泄露，可能造成实际伤害。请使用不带 * 的模型或你自己的 Ollama 服务器，不要放姓名和号码，也不要粘贴完整的文档或消息。",
   },
   hi: {
+    setCheckOllama: "इस Ollama पते की जाँच करें",
+    setCheckingOllama: "सर्वर की जाँच हो रही है…",
+    setOllamaReady: "जुड़ गया। इंस्टॉल किए गए मॉडल:",
+    setOllamaNoModels: "जुड़ गया, लेकिन कोई मॉडल इंस्टॉल नहीं है। पहले अपने Ollama सर्वर पर मॉडल इंस्टॉल करें।",
+    setOllamaUnreachable: "Ollama से नहीं जुड़ सके। पता जाँचें, Ollama चालू रखें और फ़ोन को उसी नेटवर्क या VPN से जोड़ें।",
+
     appTitle: 'RobinTHood',
     webBtn: '🌐 वेब',
     musicOn: '♪',
