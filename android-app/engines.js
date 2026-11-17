@@ -2,6 +2,7 @@
 // Every request sends the whole conversation (system prompt + recent turns),
 // so the model can see what was said earlier.
 import { fetch } from 'expo/fetch';
+import { fetchOllama } from './ollamaConnection.js';
 import { IMAGE_BUDGET_CHARS, withImages } from './photos';
 import { readSSE, stripThink } from './sse.js';
 
@@ -106,15 +107,13 @@ function toOllama(m) {
 }
 
 async function streamOllama({ baseUrl, model, messages, onChunk, signal }) {
-  const url = baseUrl.replace(/\/+$/, '') + '/api/chat';
-  const res = await fetch(url, {
+  const res = await fetchOllama(fetch, baseUrl, '/api/chat', {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
     // Ollama takes photos as a base64 list beside the text, not as content parts.
     body: JSON.stringify({ model: model || 'llama3.1', stream: true, messages: messages.map(toOllama) }),
   });
-  if (!res.ok) throw new Error(`Ollama HTTP ${res.status}`);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
@@ -127,11 +126,11 @@ async function streamOllama({ baseUrl, model, messages, onChunk, signal }) {
     buf = done ? '' : lines.pop();
     for (const line of lines) {
       if (!line.trim()) continue;
-      try {
-        const json = JSON.parse(line);
-        const piece = json.message?.content;
-        if (piece) { full += piece; onChunk(stripThink(full)); }
-      } catch {}
+      let json;
+      try { json = JSON.parse(line); } catch { continue; }
+      if (json.error) throw new Error('Ollama could not run this model. Check the model name in Settings and that your server has enough memory.');
+      const piece = json.message?.content;
+      if (piece) { full += piece; onChunk(stripThink(full)); }
     }
     if (done) break;
   }

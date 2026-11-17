@@ -5,7 +5,8 @@ import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C, F } from '../theme';
 import { folderIsVault, nameOf, pickFolder } from '../files';
 import { applyLocalOnlyToggle } from '../settingsRules';
-import { discoverOllamaLan } from '../ollamaDiscovery';
+import { checkOllamaEndpoint, discoverOllamaLan } from '../ollamaDiscovery';
+import { normalizeOllamaUrl } from '../ollamaConnection';
 import { FEEDBACK_MAX, submitFeedback } from '../report';
 
 export function Field({ label, value, placeholder, onChange, secure }) {
@@ -103,6 +104,11 @@ export default function SettingsModal({
   handleOpenSource,
 }) {
   const [ollamaStatus, setOllamaStatus] = useState('');
+  const ollamaCheckId = useRef(0);
+  let ollamaAddressError = '';
+  if (settings.ollamaUrl) {
+    try { normalizeOllamaUrl(settings.ollamaUrl); } catch (error) { ollamaAddressError = error.message; }
+  }
   const [vaultStatus, setVaultStatus] = useState('');
   const lang = settings.lang;
   const [feedback, setFeedback] = useState('');
@@ -112,7 +118,13 @@ export default function SettingsModal({
 
   const folderLabel = settings.filesUri ? (nameOf(settings.filesUri) || t('setChosenFolder', lang)) : t('setChooseFolder', lang);
 
-  useEffect(() => { if (!visible) setFeedbackStatus(''); }, [visible]);
+  useEffect(() => {
+    if (!visible) {
+      setFeedbackStatus('');
+      ollamaCheckId.current += 1;
+      setOllamaStatus('');
+    }
+  }, [visible]);
 
   const sendFeedback = async () => {
     if (!feedback.trim() || sendingRef.current) return;
@@ -200,8 +212,13 @@ export default function SettingsModal({
                   label={t('setOllamaUrl', lang)}
                   value={settings.ollamaUrl}
                   placeholder="http://my-pc.tailscale.net:11434"
-                  onChange={(v) => setSettings((s) => ({ ...s, ollamaUrl: v.trim() }))}
+                  onChange={(v) => {
+                    ollamaCheckId.current += 1;
+                    setOllamaStatus('');
+                    setSettings((s) => ({ ...s, ollamaUrl: v.trim() }));
+                  }}
                 />
+                {ollamaAddressError ? <Text style={styles.inlineHint}>{ollamaAddressError}</Text> : null}
                 {/^http:\/\//i.test(settings.ollamaUrl) ? (
                   <Text style={styles.inlineHint}>{t('setHttpHint', lang)}</Text>
                 ) : null}
@@ -215,11 +232,29 @@ export default function SettingsModal({
                 />
               </Stack>
               <Row
-                label={t('setFindOllama', lang)}
-                hint={ollamaStatus || t('setFindOllamaHint', lang)}
+                label={t('setCheckOllama', lang)}
+                hint={ollamaStatus}
                 onPress={async () => {
+                  const checkId = ++ollamaCheckId.current;
+                  let address;
+                  try { address = normalizeOllamaUrl(settings.ollamaUrl); }
+                  catch (error) { setOllamaStatus(error.message); return; }
+                  setOllamaStatus(t('setCheckingOllama', lang));
+                  const found = await checkOllamaEndpoint(address, 4000);
+                  if (checkId !== ollamaCheckId.current) return;
+                  setOllamaStatus(found
+                    ? (found.models.length ? `${t('setOllamaReady', lang)} ${found.models.join(', ')}` : t('setOllamaNoModels', lang))
+                    : t('setOllamaUnreachable', lang));
+                }}
+              />
+              <Row
+                label={t('setFindOllama', lang)}
+                hint={t('setFindOllamaHint', lang)}
+                onPress={async () => {
+                  const checkId = ++ollamaCheckId.current;
                   setOllamaStatus(t('setSearchingLan', lang));
                   const found = await discoverOllamaLan(settings.ollamaUrl ? [settings.ollamaUrl] : []);
+                  if (checkId !== ollamaCheckId.current) return;
                   if (found) {
                     setSettings((s) => ({
                       ...s,
