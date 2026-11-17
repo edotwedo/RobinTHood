@@ -17,7 +17,7 @@ import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFi
 import { vaultActive } from './vault.js';
 import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
-import { folderPromptAction } from './settingsRules';
+import { defaultSettings, folderPromptAction } from './settingsRules';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { wrapFile } from './actions';
 import { detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
@@ -42,27 +42,15 @@ const KEYS = {
   activeSessionId: '@robinthood_active_session_v1',
 };
 
-const DEFAULT_SETTINGS = {
-  selectedModel: 'ovh-120b',
-  webSearch: true,
-  music: true,
-  musicVolume: 0.3,
-  filesUri: '',
-  ollamaUrl: '',
-  ollamaModel: '',
-  openRouterKey: '',
-  openRouterModel: '',
-  obsidianVault: '',
-  airGapped: false,
-  isPro: false,
+const DEFAULT_SETTINGS = defaultSettings({
   lang: getDeviceLocale(),
-};
+});
 
 const INTRO = {
   id: 'intro',
   role: 'assistant',
   intro: true,
-  content: 'RobinTHood is ready. Free AI, no account. How it works: Robin routes between multiple leading AI models so you get fast, reliable answers without subscriptions. A * next to a model means it may collect your messages. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. ♪ turns the music on or off.',
+  content: 'RobinTHood is ready. Free AI, no account. How it works: Robin routes between multiple leading AI models so you get fast, reliable answers without subscriptions. A * next to a model means it may collect your messages. Tap the model name up top to switch models. 🌐 Web on lets me search the internet and read pages myself. I can also save files, like .md notes, to a folder on your phone. 💬 opens chat history. ♪ turns background music on or off.',
   model: 'RobinTHood',
 };
 
@@ -610,6 +598,8 @@ function Chat() {
           onPress={() => setSettings((s) => ({ ...s, webSearch: !s.webSearch }))}
           style={[styles.headerBtn, settings.webSearch && styles.webOn]}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('webBtn', settings.lang)}
         >
           <Text style={[styles.headerBtnText, settings.webSearch && { color: '#fff' }]}>{t('webBtn', settings.lang)}</Text>
         </Pressable>
@@ -617,16 +607,38 @@ function Chat() {
           onPress={() => setSettings((s) => ({ ...s, music: !s.music }))}
           style={[styles.headerBtn, settings.music && styles.webOn]}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={settings.music ? t('musicOff', settings.lang) : t('musicOn', settings.lang)}
+          accessibilityHint={t('musicHint', settings.lang)}
         >
           <Text style={[styles.headerBtnText, settings.music && { color: '#fff' }]}>{settings.music ? '♪' : '♪̸'}</Text>
         </Pressable>
-        <Pressable onPress={() => setHistoryOpen(true)} style={styles.headerBtn} hitSlop={8}>
+        <Pressable
+          onPress={() => setHistoryOpen(true)}
+          style={styles.headerBtn}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('historyBtn', settings.lang)}
+          accessibilityHint={t('historyHint', settings.lang)}
+        >
           <Text style={styles.headerBtnText}>💬</Text>
         </Pressable>
-        <Pressable onPress={newChat} style={styles.headerBtn} hitSlop={8}>
+        <Pressable
+          onPress={newChat}
+          style={styles.headerBtn}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('newChat', settings.lang)}
+        >
           <Text style={styles.headerBtnText}>{t('newChat', settings.lang)}</Text>
         </Pressable>
-        <Pressable onPress={() => setSettingsOpen(true)} style={styles.headerBtn} hitSlop={8}>
+        <Pressable
+          onPress={() => setSettingsOpen(true)}
+          style={styles.headerBtn}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('settingsTitle', settings.lang)}
+        >
           <Text style={styles.gear}>⚙</Text>
         </Pressable>
       </View>

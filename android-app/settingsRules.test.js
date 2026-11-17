@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyLocalOnlyToggle, folderPromptAction } from './settingsRules.js';
+import { applyLocalOnlyToggle, defaultSettings, folderPromptAction } from './settingsRules.js';
+
+test('default settings start with background music off (S-01)', () => {
+  const settings = defaultSettings();
+  assert.equal(settings.music, false);
+});
 
 test('local-only restores web search that was on', () => {
   const on = applyLocalOnlyToggle({ airGapped: false, webSearch: true, selectedModel: 'ovh-120b' });
