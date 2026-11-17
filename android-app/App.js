@@ -608,7 +608,8 @@ function Chat() {
           style={[styles.headerBtn, settings.music && styles.webOn]}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={settings.music ? t('musicOff', settings.lang) : t('musicOn', settings.lang)}
+          accessibilityLabel={t('musicBtn', settings.lang)}
+          accessibilityState={{ checked: !!settings.music }}
           accessibilityHint={t('musicHint', settings.lang)}
         >
           <Text style={[styles.headerBtnText, settings.music && { color: '#fff' }]}>{settings.music ? '♪' : '♪̸'}</Text>
