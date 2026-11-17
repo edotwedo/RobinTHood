@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Alert, FlatList, Keyboard, Linking, Pressable, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Keyboard, Linking, Pressable, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -98,6 +98,13 @@ function Chat() {
     [F.semibold]: require('./assets/fonts/Poppins-SemiBold.ttf'),
     [F.bold]: require('./assets/fonts/Poppins-Bold.ttf'),
   });
+  const [fontTimedOut, setFontTimedOut] = useState(false);
+
+  useEffect(() => {
+    // C-01: Fall back to system fonts after 1500ms if custom font loading stalls
+    const fontTimer = setTimeout(() => setFontTimedOut(true), 1500);
+    return () => clearTimeout(fontTimer);
+  }, []);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [messages, setMessages] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -572,7 +579,16 @@ function Chat() {
 
   const models = availableModels(settings);
 
-  if (!fontsLoaded && !fontError) return <View style={styles.boot} />;
+  // C-01: Show branded logo + spinner during boot; if font loading hangs, fall through after 1.5s
+  if (!fontsLoaded && !fontError && !fontTimedOut) {
+    return (
+      <View style={styles.boot}>
+        <StatusBar style="light" />
+        <Text style={styles.bootLogo}>{t('appTitle', settings.lang)}</Text>
+        <ActivityIndicator size="large" color={C.green} style={{ marginTop: 20 }} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -759,7 +775,19 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-  boot: { flex: 1, backgroundColor: C.bg },
+  boot: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  bootLogo: {
+    color: C.text,
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line },
   title: { color: C.text, fontSize: 19, fontFamily: F.bold },
   modelChip: { color: C.green, fontSize: 12, fontWeight: '600', marginTop: 2 },
