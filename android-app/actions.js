@@ -70,6 +70,33 @@ export function looksLikeAction(partial) {
 
 export const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; } };
 
+// One card per site. www is the same site. A bad URL shares the "web" card
+// instead of becoming its own row.
+export function sourceHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || 'web';
+  } catch {
+    return 'web';
+  }
+}
+
+export function groupSources(sources) {
+  const groups = [];
+  const at = new Map();
+  for (const src of sources || []) {
+    if (!src) continue;
+    const name = sourceHost(src.url);
+    let group = at.get(name);
+    if (!group) {
+      group = { host: name, pages: [] };
+      at.set(name, group);
+      groups.push(group);
+    }
+    group.pages.push(src);
+  }
+  return groups;
+}
+
 export function stepLabel(a) {
   if (a.kind === 'SEARCH') return `Searching: ${a.arg}`;
   if (a.kind === 'OPEN') return `Reading: ${host(a.arg)}`;

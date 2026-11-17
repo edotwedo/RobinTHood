@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { groupSources } from '../actions';
 import { copyToClipboard } from '../clipboard';
 import { availableModels } from '../engines';
 import { splitFollowups } from '../followups';
@@ -83,16 +84,6 @@ export default function MessageRow({
           </View>
         </View>
       )}
-      {mine && (
-        <View style={styles.userActionRow}>
-          <Pressable style={styles.userCopyBtn} hitSlop={8} onPress={handleCopy}>
-            <Text style={[styles.userCopyText, copied && { color: C.green }]}>
-              {copied ? '✓ Copied' : '⧉'}
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
       {item.steps?.length ? (
         <View style={styles.stepsContainer}>
           {item.pending ? (
@@ -133,16 +124,25 @@ export default function MessageRow({
       ) : null}
 
       {item.content ? (
-        <>
-          {item.image ? (
-            <Image source={{ uri: `data:image/jpeg;base64,${item.image}` }} style={styles.photo} resizeMode="cover" />
-          ) : item.imageDropped ? (
-            <Text style={styles.attachChip}>📷 {item.attachment} (older photo, not kept)</Text>
-          ) : item.attachment ? (
-            <Text style={styles.attachChip}>📎 {item.attachment}</Text>
+        <View style={mine ? styles.userBody : null}>
+          <View style={mine ? styles.userTextCol : null}>
+            {item.image ? (
+              <Image source={{ uri: `data:image/jpeg;base64,${item.image}` }} style={styles.photo} resizeMode="cover" />
+            ) : item.imageDropped ? (
+              <Text style={styles.attachChip}>📷 {item.attachment} (older photo, not kept)</Text>
+            ) : item.attachment ? (
+              <Text style={styles.attachChip}>📎 {item.attachment}</Text>
+            ) : null}
+            <FormattedMessage text={item.attachment ? item.typed : shown} />
+          </View>
+          {mine ? (
+            <Pressable style={styles.userCopyBtn} hitSlop={8} onPress={handleCopy} accessibilityLabel="Copy">
+              <Text style={[styles.userCopyText, copied && { color: C.green }]}>
+                {copied ? '✓' : '⧉'}
+              </Text>
+            </Pressable>
           ) : null}
-          <FormattedMessage text={item.attachment ? item.typed : shown} />
-        </>
+        </View>
       ) : (
         <>
           <View style={styles.loadingRow}>
@@ -207,29 +207,47 @@ export default function MessageRow({
             style={styles.sourcesScroll}
             contentContainerStyle={styles.sourcesRow}
           >
-            {item.sources.map((src, i) => {
-              let domain = '';
-              try {
-                domain = new URL(src.url).hostname.replace(/^www\./, '');
-              } catch {
-                domain = 'web';
+            {groupSources(item.sources).map((group) => {
+              const opened = group.pages.some((src) => src.opened);
+              if (group.pages.length === 1) {
+                const src = group.pages[0];
+                return (
+                  <Pressable
+                    key={src.url || group.host}
+                    style={[styles.sourceCard, src.opened && styles.sourceCardOpened]}
+                    onPress={() => handleOpenSource(src.url)}
+                  >
+                    <View style={styles.sourceCardHeader}>
+                      <Text style={styles.sourceBadge}>{src.opened ? '📄 READ' : '🔗 LINK'}</Text>
+                      <Text style={styles.sourceDomain} numberOfLines={1}>
+                        {group.host}
+                      </Text>
+                    </View>
+                    <Text style={styles.sourceTitle} numberOfLines={2}>
+                      {src.title}
+                    </Text>
+                  </Pressable>
+                );
               }
               return (
-                <Pressable
-                  key={src.url || i}
-                  style={[styles.sourceCard, src.opened && styles.sourceCardOpened]}
-                  onPress={() => handleOpenSource(src.url)}
+                <View
+                  key={group.host}
+                  style={[styles.sourceCard, styles.sourceCardGroup, opened && styles.sourceCardOpened]}
                 >
                   <View style={styles.sourceCardHeader}>
-                    <Text style={styles.sourceBadge}>{src.opened ? '📄 READ' : '🔗 LINK'}</Text>
+                    <Text style={styles.sourceBadge}>{opened ? '📄 READ' : '🔗 LINK'}</Text>
                     <Text style={styles.sourceDomain} numberOfLines={1}>
-                      {domain}
+                      {group.host}
                     </Text>
                   </View>
-                  <Text style={styles.sourceTitle} numberOfLines={2}>
-                    {src.title}
-                  </Text>
-                </Pressable>
+                  {group.pages.map((src, i) => (
+                    <Pressable key={src.url || i} onPress={() => handleOpenSource(src.url)}>
+                      <Text style={styles.sourcePage} numberOfLines={2}>
+                        {src.title || group.host}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               );
             })}
           </ScrollView>
@@ -249,8 +267,9 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 8 },
   actionBtn: { paddingVertical: 2, paddingHorizontal: 4 },
   actionBtnText: { fontSize: 11, color: C.faint, fontWeight: '500' },
-  userActionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
-  userCopyBtn: { paddingHorizontal: 4, paddingVertical: 2 },
+  userBody: { flexDirection: 'row', alignItems: 'flex-start' },
+  userTextCol: { flexShrink: 1 },
+  userCopyBtn: { paddingLeft: 8, paddingVertical: 2 },
   userCopyText: { fontSize: 11, color: C.faint },
   reportBtn: { marginLeft: 'auto', paddingLeft: 12 },
   reportText: { fontSize: 11, color: C.faint },
@@ -288,6 +307,8 @@ const styles = StyleSheet.create({
   sourceBadge: { fontSize: 9, fontWeight: '700', color: C.green },
   sourceDomain: { fontSize: 10, color: C.faint, flex: 1, textAlign: 'right', marginLeft: 4 },
   sourceTitle: { fontSize: 11, color: '#93c5fd', lineHeight: 15 },
+  sourceCardGroup: { width: 180 },
+  sourcePage: { fontSize: 11, color: '#93c5fd', lineHeight: 15, marginTop: 4 },
   note: { color: C.faint, fontSize: 11, marginTop: 6, fontStyle: 'italic' },
   followups: { marginTop: 10 },
   followupsLabel: { fontSize: 10, fontWeight: '700', color: C.faint, letterSpacing: 0.8, marginBottom: 6 },
