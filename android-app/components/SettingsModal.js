@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C, F } from '../theme';
+import { MusicVolumeControl } from './MusicVolumeControl';
 import { folderIsVault, nameOf, pickFolder } from '../files';
 import { applyLocalOnlyToggle } from '../settingsRules';
 import { checkOllamaEndpoint, discoverOllamaLan } from '../ollamaDiscovery';
@@ -342,13 +343,13 @@ export default function SettingsModal({
             </Section>
 
             <Section title={t('setAudio', lang)}>
-              <Row label={t('setMusicRow', lang)} last>
-                <Pills
-                  options={[[t('setQuiet', lang), 0.15], [t('setNormal', lang), 0.3], [t('setLoud', lang), 0.6]]}
+              <Stack last>
+                <MusicVolumeControl
+                  label={t('setMusicRow', lang)}
                   value={settings.musicVolume}
-                  onChange={(v) => setSettings((s) => ({ ...s, musicVolume: v, music: true }))}
+                  onChange={(v) => setSettings((s) => ({ ...s, musicVolume: v, music: v > 0 }))}
                 />
-              </Row>
+              </Stack>
             </Section>
 
             <Section title={t('setPrivacySection', lang)}>
