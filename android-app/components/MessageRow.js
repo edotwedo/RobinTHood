@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   actionBtn: { paddingVertical: 2, paddingHorizontal: 4 },
   actionBtnText: { fontSize: 11, color: C.faint, fontWeight: '500' },
   userBody: { flexDirection: 'row', alignItems: 'flex-start' },
-  userTextCol: { flex: 1 },
+  userTextCol: { flexShrink: 1 },
   userCopyBtn: { paddingLeft: 8, paddingVertical: 2 },
   userCopyText: { fontSize: 11, color: C.faint },
   reportBtn: { marginLeft: 'auto', paddingLeft: 12 },
