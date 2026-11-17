@@ -29,3 +29,23 @@ export function folderPromptAction(settings, { prompt = false } = {}) {
   if (!prompt || settings?.folderSkipped) return 'skip';
   return 'ask';
 }
+
+// S-01: Background music must start disabled on first run so the app opens silently.
+export function defaultSettings(overrides = {}) {
+  return {
+    selectedModel: 'ovh-120b',
+    webSearch: true,
+    music: false,
+    musicVolume: 0.3,
+    filesUri: '',
+    ollamaUrl: '',
+    ollamaModel: '',
+    openRouterKey: '',
+    openRouterModel: '',
+    obsidianVault: '',
+    airGapped: false,
+    folderSkipped: false,
+    isPro: false,
+    ...overrides,
+  };
+}
