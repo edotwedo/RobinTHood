@@ -4,6 +4,7 @@ import Constants from 'expo-constants';
 import { LANG_NAMES, SUPPORTED_LANGS, t } from '../i18n';
 import { C, F } from '../theme';
 import { folderIsVault, nameOf, pickFolder } from '../files';
+import { applyLocalOnlyToggle } from '../settingsRules';
 import { discoverOllamaLan } from '../ollamaDiscovery';
 import { FEEDBACK_MAX, submitFeedback } from '../report';
 
@@ -189,17 +190,7 @@ export default function SettingsModal({
                 label={t('setLocalOnly', lang)}
                 hint={t('setLocalOnlyHint', lang)}
                 value={settings.airGapped}
-                onToggle={() =>
-                  setSettings((s) => {
-                    const next = !s.airGapped;
-                    return {
-                      ...s,
-                      airGapped: next,
-                      webSearch: next ? false : s.webSearch,
-                      selectedModel: next ? 'ollama' : (s.selectedModel === 'ollama' ? 'ovh-120b' : s.selectedModel),
-                    };
-                  })
-                }
+                onToggle={() => setSettings((s) => applyLocalOnlyToggle(s))}
               />
             </Section>
 

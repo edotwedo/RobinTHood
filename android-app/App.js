@@ -17,6 +17,7 @@ import { ALL_FILES_ROOT, IS_IOS, hasAllFilesAccess, iosFolder, nameOf, openAllFi
 import { vaultActive } from './vault.js';
 import { DEFAULT_PHOTO_PROMPT, keepRecentImages } from './photos';
 import { getDeviceLocale, t } from './i18n';
+import { folderPromptAction } from './settingsRules';
 import { AdBanner, openAdPrivacyOptions } from './AdBanner';
 import { wrapFile } from './actions';
 import { detectSensitive, detokenizeText, markFor, maskSensitive, mayCollect, tokenizeSensitive } from './privacy';
@@ -335,7 +336,7 @@ function Chat() {
           defaultFolder: effectiveFolder,
           tokenMap: tokenMapRef.current,
           lang: activeSettings.lang || 'en',
-          getFolder: async () => {
+          getFolder: async (opts = {}) => {
             if (IS_IOS) return iosFolder();
             if (ALL_FILES) {
               if (await hasAllFilesAccess()) return ALL_FILES_ROOT;
@@ -343,12 +344,27 @@ function Chat() {
               await openAllFilesSetting(PACKAGE);
               throw new Error('All files access is off. Switch it on in the screen that just opened, come back, and ask again');
             }
-            if (settingsRef.current.filesUri) return settingsRef.current.filesUri;
-            setStatus('Pick a folder for Robin\'s files…');
+            const current = settingsRef.current;
+            if (current.filesUri) return current.filesUri;
+            if (folderPromptAction(current, opts) !== 'ask') throw new Error('No folder chosen');
+            const lang = current.lang || 'en';
+            const choice = await ask({
+              title: t('folderAskTitle', lang),
+              body: t('folderAskBody', lang),
+              buttons: [
+                { text: t('folderAskSkip', lang), style: 'cancel', value: 'skip' },
+                { text: t('folderAskChoose', lang), value: 'choose' },
+              ],
+            });
+            if (choice !== 'choose') {
+              settingsRef.current = { ...settingsRef.current, folderSkipped: true };
+              setSettings((s) => ({ ...s, folderSkipped: true }));
+              throw new Error('No folder chosen');
+            }
             const uri = await pickFolder();
             const vaultUri = (await folderIsVault(uri)) ? uri : settingsRef.current.obsidianVault;
-            setSettings((s) => ({ ...s, filesUri: uri, obsidianVault: vaultUri }));
-            settingsRef.current = { ...settingsRef.current, filesUri: uri, obsidianVault: vaultUri };
+            settingsRef.current = { ...settingsRef.current, filesUri: uri, obsidianVault: vaultUri, folderSkipped: false };
+            setSettings((s) => ({ ...s, filesUri: uri, obsidianVault: vaultUri, folderSkipped: false }));
             return uri;
           },
           confirm: (action) => {
