@@ -310,29 +310,29 @@ export async function searchAllFiles(query, folder = 'Documents/RobinTHood', max
 export function createFolderStore(getFolder) {
   return {
     async list(folder) {
-      const dir = await getFolder();
+      const dir = await getFolder({ prompt: true });
       return listFiles(dir);
     },
     async exists(path) {
       try {
-        const dir = await getFolder();
+        const dir = await getFolder({ prompt: true });
         return await fileExists(dir, path);
       } catch {
         return undefined;
       }
     },
-    async read(path) {
-      const dir = await getFolder();
+    async read(path, opts = {}) {
+      const dir = await getFolder({ prompt: opts.prompt !== false });
       return readFile(dir, path);
     },
     async write(path, content) {
-      const dir = await getFolder();
+      const dir = await getFolder({ prompt: true });
       const res = await writeFile(dir, path, content);
       getNoteDb().then((db) => db && indexNote(db, res.name, content)).catch(() => {});
       return res;
     },
     async append(path, content) {
-      const dir = await getFolder();
+      const dir = await getFolder({ prompt: true });
       const res = await appendFile(dir, path, content);
       getNoteDb().then(async (db) => {
         if (db) {
@@ -345,7 +345,7 @@ export function createFolderStore(getFolder) {
       return res;
     },
     async search(query, maxHits = 6) {
-      const dir = await getFolder();
+      const dir = await getFolder({ prompt: true });
       return searchLocalFiles(dir, query, maxHits);
     },
   };
@@ -403,7 +403,7 @@ export function createAllFilesStore(defaultFolder = 'Documents/RobinTHood') {
 export async function loadVaultSecrets(store, options = {}) {
   if (!store || typeof store.read !== 'function') return {};
   try {
-    const content = await store.read('_vault_secrets.json');
+    const content = await store.read('_vault_secrets.json', { prompt: false });
     if (content) return parseVaultSecrets(content, options);
   } catch {}
   return {};
