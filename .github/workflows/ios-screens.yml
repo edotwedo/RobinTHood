@@ -1,0 +1,62 @@
+name: iOS screenshots
+
+# Builds the app for the iOS simulator, launches it on the largest iPhone, and saves
+# App Store screenshots as an artifact. Runs on push to paul/ios-screens.
+on:
+  push:
+    branches: [paul/ios-screens]
+
+permissions:
+  contents: read
+
+jobs:
+  screens:
+    runs-on: macos-15
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: android-app
+    env:
+      ROBIN_ADMOB_IOS_APP: ${{ secrets.ROBIN_ADMOB_IOS_APP }}
+      ROBIN_ADMOB_IOS_BANNER: ${{ secrets.ROBIN_ADMOB_IOS_BANNER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: npm ci
+      - run: npx expo prebuild --platform ios --no-install
+      - working-directory: android-app/ios
+        run: pod install
+      - name: Pick simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];c=[(r,x) for r,l in d.items() if 'iOS' in r for x in l if 'Pro Max' in x['name']];c.sort(key=lambda t:t[0]);print(c[-1][1]['udid'])")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices | grep "$UDID"
+      - name: Build for simulator
+        working-directory: android-app/ios
+        run: |
+          set -o pipefail
+          ws=$(ls -d *.xcworkspace | head -1); scheme="${ws%.xcworkspace}"
+          xcodebuild -workspace "$ws" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build | tail -20
+      - name: Launch and capture
+        run: |
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          APP=$(ls -d "$RUNNER_TEMP"/dd/Build/Products/Release-iphonesimulator/*.app | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun simctl launch "$UDID" com.edotwedo.robinthood
+          for t in 20 45 75; do sleep $((t - ${prev:-0})); prev=$t; xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/launch-${t}s.png"; done
+          sips -g pixelWidth -g pixelHeight "$RUNNER_TEMP"/shots/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-screens
+          path: ${{ runner.temp }}/shots
