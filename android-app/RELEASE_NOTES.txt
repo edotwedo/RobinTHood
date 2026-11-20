@@ -1,11 +1,3 @@
-RobinTHood 0.8.13:
-• Fixed a blank screen on startup on some phones; a logo now shows while loading.
-• Music starts off. Header buttons have screen-reader labels.
-• Pages from the same site share one source card; the copy button sits beside your message.
-• Ollama setup now checks the server address and explains connection failures. Use a server origin such as http://192.168.1.10:11434; reverse-proxy paths such as https://host/ollama are not supported.
-• Music volume controls are visible again. Moving the slider above zero starts music; zero mutes it.
-
-RobinTHood 0.8.12:
-• Obsidian vault folders: pick your vault so Robin can read notes in subfolders (skips .obsidian and .trash).
-• Vault-aware answers: Robin searches your notes before personal answers and cites sources like [[Note]].
-• Links and backlinks: Robin follows links between notes, finds related notes, and can write new notes with [[links]] and tags.
+RobinTHood 0.8.14:
+• Real sponsor banners replace the placeholder test ads.
+• Under-the-hood build fixes.
