@@ -174,3 +174,26 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -40
           echo "Uploaded build ${{ github.run_number }} to TestFlight."
           echo "It appears under App Store Connect > TestFlight once Apple finishes processing."
+
+      # Same archive exported to a local .ipa, kept as a run artifact so a cloud device
+      # service (BrowserStack etc.) can install it for review recordings.
+      - name: Export .ipa artifact
+        working-directory: android-app/ios
+        run: |
+          set -o pipefail
+          sed 's#<string>upload</string>#<string>export</string>#' ExportOptions.plist > ExportLocal.plist
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/RobinTHood.xcarchive" \
+            -exportOptionsPlist ExportLocal.plist \
+            -exportPath "$RUNNER_TEMP/ipa-local" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -20
+          ls -la "$RUNNER_TEMP/ipa-local"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: robinthood-ipa
+          path: ${{ runner.temp }}/ipa-local/*.ipa
+          retention-days: 14
