@@ -1,0 +1,6 @@
+RobinTHood is out of testing. Thank you, testers!
+• Free AI chat with no account: web research with sources, photo reading, and several open models
+• Works with your own notes folder or Obsidian vault
+• Chat history with search, 1-tap copy and retry
+• Fixed: blank start screen on some phones, folder prompt when sending, web search after Local-only mode
+• Optional home Ollama server, with clearer connection errors
