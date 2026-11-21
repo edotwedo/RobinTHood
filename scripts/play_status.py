@@ -193,8 +193,59 @@ def update_track_notes(service, track_name, notes):
             pass
 
 
+def production_release(version_code, fraction, notes=None):
+    """The production release body: a staged rollout below 1.0, a full release at 1.0."""
+    if not 0 < fraction <= 1:
+        raise ValueError(f"rollout fraction must be above 0 and at most 1, got {fraction}")
+    release = {"name": str(version_code), "versionCodes": [str(version_code)]}
+    if fraction < 1:
+        release.update(status="inProgress", userFraction=fraction)
+    else:
+        release["status"] = "completed"
+    if notes and notes.strip():
+        release["releaseNotes"] = [{"language": "en-US", "text": notes.strip()[:500]}]
+    return release
+
+
+def promote(service, version_code, fraction, source_track="track001", notes=None):
+    """Move a build that is already on a testing track to production, without re-uploading.
+
+    Running it again with a larger fraction widens the rollout; 1.0 releases to everyone.
+    The build must already be on source_track, so only a tested build can reach the public.
+    """
+    release = production_release(version_code, fraction, notes)
+    edit_id = service.edits().insert(packageName=PACKAGE, body={}).execute()["id"]
+    try:
+        tested = service.edits().tracks().get(packageName=PACKAGE, editId=edit_id, track=source_track).execute()
+        on_track = {c for r in tested.get("releases", []) for c in r.get("versionCodes", [])}
+        if str(version_code) not in on_track:
+            raise SystemExit(f"versionCode {version_code} is not on '{source_track}' "
+                             f"(found {sorted(on_track) or 'none'}); test it there first.")
+        if "releaseNotes" not in release:
+            for r in tested.get("releases", []):
+                if str(version_code) in r.get("versionCodes", []) and r.get("releaseNotes"):
+                    release["releaseNotes"] = r["releaseNotes"]
+        service.edits().tracks().update(packageName=PACKAGE, editId=edit_id, track="production",
+                                        body={"track": "production", "releases": [release]}).execute()
+        service.edits().commit(packageName=PACKAGE, editId=edit_id).execute()
+    except BaseException:
+        try:
+            service.edits().delete(packageName=PACKAGE, editId=edit_id).execute()
+        except Exception:
+            pass
+        raise
+    share = "everyone" if fraction >= 1 else f"{fraction:.0%} of users (staged rollout)"
+    print(f"★ versionCode {version_code} sent to production for {share}. "
+          "Google reviews it before users see it; check Play Console > Publishing overview.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Google Play Developer API CLI")
+    parser.add_argument("--promote", type=int, metavar="VERSION_CODE",
+                        help="Move this versionCode from --from-track to production (no upload)")
+    parser.add_argument("--from-track", default="track001", help="Testing track the build must already be on")
+    parser.add_argument("--fraction", type=float, default=0.2,
+                        help="Share of users for the production rollout, 0-1 (default 0.2; 1 = everyone)")
     parser.add_argument("--deploy", "--upload", dest="bundle_path", help="Path to .aab bundle file to upload and deploy")
     parser.add_argument("--track", default="track001", help="Target release track (default: track001)")
     parser.add_argument("--notes", help="Release notes text for this release")
@@ -213,7 +264,9 @@ def main():
     creds = service_account.Credentials.from_service_account_file(KEY_FILE, scopes=SCOPES)
     service = build("androidpublisher", "v3", credentials=creds)
 
-    if args.bundle_path:
+    if args.promote:
+        promote(service, args.promote, args.fraction, source_track=args.from_track, notes=notes)
+    elif args.bundle_path:
         deploy_bundle(service, args.bundle_path, track_name=args.track, release_notes=notes)
     elif notes:
         update_track_notes(service, args.track, notes)

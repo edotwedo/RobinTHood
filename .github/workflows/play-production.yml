@@ -1,0 +1,50 @@
+name: Play production release
+
+# Manual only. Moves a build that already passed closed testing (track001) to the public
+# production track, without rebuilding or re-uploading it. Run it again with a larger
+# fraction to widen the rollout; 1 releases to everyone.
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: versionCode already on track001 (0.8.14 is 33)
+        required: true
+      fraction:
+        description: Share of users, above 0 up to 1 (0.2 = 20% staged rollout)
+        required: true
+        default: '0.2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: play-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Promote to production
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          FRACTION: ${{ inputs.fraction }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::No PLAY_SERVICE_ACCOUNT_JSON secret configured."; exit 1
+          fi
+          trap 'rm -f play_key.json' EXIT
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > play_key.json
+          pip install --quiet google-api-python-client google-auth
+          PLAY_SERVICE_ACCOUNT_KEY=play_key.json python scripts/play_status.py \
+            --promote "$VERSION_CODE" --fraction "$FRACTION" \
+            --notes-file android-app/PRODUCTION_NOTES.txt
